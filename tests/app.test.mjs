@@ -72,18 +72,24 @@ test('Интерфейс восстанавливает настройки и о
   await until(()=>doc.querySelector('[data-sticker-id="a"]'))
   doc.querySelector('dialog').showModal=()=>{}
   doc.querySelector('dialog').close=()=>{}
-  window.confirm=()=>true
   const sticker=doc.querySelector('[data-sticker-id="a"]')
   sticker.getBoundingClientRect=()=>new window.DOMRect(20,20,168,168)
   sticker.dispatchEvent(new window.MouseEvent('dblclick',{bubbles:true}))
   await until(()=>button('Уничтожить'))
-  fail=true
   button('Уничтожить').click()
+  await until(()=>button('Оставить'))
+  assert.equal(JSON.parse(tasks).length,1)
+  button('Оставить').click()
+  await until(()=>!button('Да, уничтожить'))
+  button('Уничтожить').click()
+  await until(()=>button('Да, уничтожить'))
+  fail=true
+  button('Да, уничтожить').click()
   await until(()=>doc.querySelector('output').textContent.includes('диск недоступен'))
   assert.equal(doc.querySelector('.sticker-ghost'),null)
   assert.equal(JSON.parse(tasks).length,1)
   fail=false
-  button('Уничтожить').click()
+  button('Да, уничтожить').click()
   await until(()=>doc.querySelector('.sticker-ghost'))
   await until(()=>!doc.querySelector('[data-sticker-id="a"]'))
   assert.deepEqual(JSON.parse(tasks),[])
