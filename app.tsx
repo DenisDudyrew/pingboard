@@ -1,4 +1,4 @@
-import {destroySticker} from './sticker-effects'
+import {destroySticker,celebrate} from './sticker-effects'
 import {StickyBoard, PaperPalette, paperDragType, notePosition, paperColors, surfaces, pinColors, defaultPinColor, type PinColor, type Point} from './sticky-board'
 import {boardColumns} from './board-view'
 import {reminderChanges} from './reminders'
@@ -18,7 +18,14 @@ function App(){
   const [view,setView]=useState<View>('Доска'),[surface,setSurface]=useState<string>(surfaces[0]),[filter,setFilter]=useState('Все'),[query,setQuery]=useState('')
   const [searchOpen,setSearchOpen]=useState(false)
   const searchToggle=useRef<HTMLButtonElement>(null)
-  const [confirmDestroy,setConfirmDestroy]=useState(false)
+  const camera=useRef({x:0,y:0,zoom:1})
+  const [deleted,setDeleted]=useState<{task:Task,index:number,cancelEffect?:()=>void}[]>([])
+  const lastDeleted=deleted[deleted.length-1]
+  useEffect(()=>{
+    if(!lastDeleted)return
+    const timer=setTimeout(()=>setDeleted(items=>items.filter(item=>item!==lastDeleted)),8000)
+    return ()=>clearTimeout(timer)
+  },[lastDeleted])
   const [detailsOpen,setDetailsOpen]=useState(false)
   const editor=useRef<HTMLFormElement>(null)
   const [draft,setDraft]=useState<Task|null>(null),[over,setOver]=useState(-1)
@@ -26,7 +33,7 @@ function App(){
   const [menu,setMenu]=useState<{task:Task,anchor:HTMLElement,bounds:DOMRect}|null>(null)
   const panel=useRef<HTMLDivElement>(null), busy=useRef(false)
   function closeMenu(){
-    setMenu(null);setDraft(null);setDetailsOpen(false);setConfirmDestroy(false)
+    setMenu(null);setDraft(null);setDetailsOpen(false)
   }
   useEffect(()=>{
     if(!menu)return
@@ -63,7 +70,7 @@ function App(){
   const today=view==='Сегодня', boardView=view==='Доска'
   function preferences(nextView:View,area:string,background=surface){
     setView(nextView);setFilter(area);setSurface(background)
-    const data=JSON.stringify({view:nextView,today:nextView==='Сегодня',filter:area,surface:background})
+    const data=JSON.stringify({view:nextView,today:nextView==='Сегодня',filter:area,surface:background,camera:camera.current})
     preferencesQueue.current=preferencesQueue.current.then(async()=>{
       if(native)await native.invoke('save_settings',{data})
       else localStorage.setItem('pingboard.settings',data)
@@ -77,6 +84,8 @@ function App(){
     async function loadPreferences(){
       const raw=native?await native.invoke('load_settings'):localStorage.getItem('pingboard.settings')
       const options=JSON.parse(raw||'{}')
+      const saved=options?.camera
+      if(saved&&Number.isFinite(saved.x)&&Number.isFinite(saved.y)&&saved.zoom>=0.5&&saved.zoom<=1.5&&Number.isFinite(saved.zoom))camera.current=saved
       setView(views.includes(options?.view)?options.view:options?.today===true?'Сегодня':'Доска')
       setSurface(options?.surface==='Пробка'?'Облако':surfaces.includes(options?.surface)?options.surface:surfaces[0])
       setFilter(['Работа','Личное'].includes(options?.filter)?options.filter:'Все')
@@ -119,12 +128,30 @@ function App(){
     const color=card&&getComputedStyle(card).getPropertyValue('--paper').trim()
     const background=card&&getComputedStyle(card).backgroundColor
     const title=card?.querySelector('strong')?.textContent
-    if(!await save(tasks.filter(task=>task.id!==id)))return
+    const index=tasks.findIndex(task=>task.id===id)
+    if(index<0||!await save(tasks.filter(task=>task.id!==id)))return
     closeMenu()
-    if(bounds&&background)destroySticker(bounds,color||background,title)
+    const cancelEffect=bounds&&background?destroySticker(bounds,color||background,title):undefined
+    setDeleted(items=>[...items,{task:tasks[index],index,cancelEffect}])
+  }
+  async function restore(){
+    if(!lastDeleted)return
+    const next=[...tasks]
+    next.splice(lastDeleted.index,0,lastDeleted.task)
+    if(tasks.some(t=>t.id===lastDeleted.task.id)||!await save(next))return
+    lastDeleted.cancelEffect?.()
+    setDeleted(items=>items.filter(item=>item!==lastDeleted))
+  }
+  async function complete(){
+    if(!menu)return
+    const rect=menu.anchor.getBoundingClientRect()
+    if(await save(tasks.map(t=>t.id===menu.task.id?{...t,stage:2}:t))){
+      closeMenu()
+      celebrate(rect)
+    }
   }
   function openStickerMenu(task:Task,anchor:HTMLElement){
-    setDraft(null);setDetailsOpen(false);setConfirmDestroy(false);setMenu({task,anchor,bounds:anchor.getBoundingClientRect()})
+    setDraft(null);setDetailsOpen(false);setMenu({task,anchor,bounds:anchor.getBoundingClientRect()})
   }
   function add(stage=0,position?:Point,paper=paperColors[tasks.length%paperColors.length] as string){
     void save([...tasks,{id:crypto.randomUUID(),title:'',note:'',area:filter==='Личное'?filter:'Работа',due:'',stage,position,paper}])
@@ -137,7 +164,7 @@ function App(){
   const overdue=(t:Task)=>!!t.due&&t.stage!==2&&Date.parse(t.due)<=now
   function renderEditor(){
     if(!draft)return null
-    return <form ref={editor} className="sticker-editor" aria-label="Редактирование стикера" onSubmit={async e=>{e.preventDefault();if(confirmDestroy)return;const title=draft.title.trim();if(!title)return;const old=tasks.find(t=>t.id===draft.id);const t={...draft,title,steps:draft.steps?.filter(step=>step.text.trim()),position:draft.position??notePosition(old?tasks.indexOf(old):tasks.length),pinged:old?.due===draft.due&&old?.pinged};if(await save(old?tasks.map(a=>a.id===t.id?t:a):[...tasks,t]))closeMenu()}}><div className="editor-actions">
+    return <form ref={editor} className="sticker-editor" aria-label="Редактирование стикера" onSubmit={async e=>{e.preventDefault();const title=draft.title.trim();if(!title)return;const old=tasks.find(t=>t.id===draft.id);const t={...draft,title,steps:draft.steps?.filter(step=>step.text.trim()),position:draft.position??notePosition(old?tasks.indexOf(old):tasks.length),pinged:old?.due===draft.due&&old?.pinged};if(await save(old?tasks.map(a=>a.id===t.id?t:a):[...tasks,t]))closeMenu()}}><div className="editor-actions">
     <button type="button" aria-label="Закрыть" title="Закрыть" onClick={closeMenu}>×</button>
     <button type="submit" aria-label="Сохранить" title="Сохранить">✓</button>
   </div>
@@ -175,26 +202,23 @@ function App(){
     {view==='Канбан'&&<PaperPalette disabled={!ready} add={paper=>add(0,undefined,paper)}/>}
     {!native&&'Notification' in window&&Notification.permission==='default'&&<button onClick={async()=>{await Notification.requestPermission();setNotify(!notify)}}>Включить уведомления</button>}
   </nav><output>{error}</output>{!today&&tasks.some(overdue)&&<p className={boardView?'board-overdue':undefined}><button onClick={()=>preferences('Сегодня',filter)}>Пора заняться · {tasks.filter(overdue).length} →</button></p>}
-  {view==='Доска'?ready&&<StickyBoard notes={tasks} visible={new Set(columns.flat().map(task=>task.id))} surface={surface}
+  {view==='Доска'?ready&&<StickyBoard initialCamera={camera.current} remember={state=>{camera.current=state;preferences(view,filter)}} notes={tasks} visible={new Set(columns.flat().map(task=>task.id))} surface={surface}
     customize={background=>preferences(view,filter,background)} add={(position,paper)=>add(0,position,paper)} edit={openStickerMenu} move={move} editingId={detailsOpen?undefined:draft?.id} renderEditor={renderEditor}/>:<div id="board">{(today?['Пора заняться','Сегодня до конца дня','Ближайшее']:stages).map((s,i)=>{
     const group=columns[i]
     return <section key={s} className={over===i?'over':''} onDragOver={e=>{if(!today){e.preventDefault();setOver(i)}}} onDrop={e=>{e.preventDefault();setOver(-1);if(today)return;const paper=e.dataTransfer.getData(paperDragType);if(paperColors.some(color=>color===paper)){add(i,undefined,paper);return}const id=e.dataTransfer.getData('text/plain');if(tasks.some(t=>t.id===id&&t.stage!==i))void save(tasks.map(t=>t.id===id?{...t,stage:i}:t))}}><h2>{s}<small>{group.length}</small></h2>{group.map(card)}{today&&!group.length&&<small>Задач нет</small>}{!today&&<button className="add" disabled={!ready} onClick={()=>add(i)}>+ Стикер</button>}</section>
-  })}</div>}{menu&&!draft&&!confirmDestroy&&<div ref={panel} className="sticker-actions" role="group" aria-label="Действия со стикером" style={{left:actionsLeft,top:actionsTop}}>
+  })}</div>}{menu&&!draft&&<div ref={panel} className="sticker-actions" role="group" aria-label="Действия со стикером" style={{left:actionsLeft,top:actionsTop}}>
     <button type="button" autoFocus aria-label="Изменить" title="Изменить" onClick={()=>setDraft({...menu.task})}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11L4 20Z"/></svg>
     </button>
-    <button type="button" className="destroy-button" aria-label="Уничтожить" title="Уничтожить" onClick={()=>setConfirmDestroy(true)}>
+    {menu.task.stage!==2&&<button type="button" className="done-button" aria-label="Готово" title="Готово" onClick={()=>void complete()}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 5L20 6"/></svg>
+    </button>}
+    <button type="button" className="destroy-button" aria-label="Уничтожить" title="Уничтожить" onClick={()=>void removeSticker(menu.task.id)}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v6m4-6v6"/></svg>
     </button>
-  </div>}{menu&&(confirmDestroy||(draft&&(!boardView||detailsOpen)))&&<div ref={panel} className="sticker-panel" role="dialog" aria-label="Меню стикера"
+  </div>}{menu&&draft&&(!boardView||detailsOpen)&&<div ref={panel} className="sticker-panel" role="dialog" aria-label="Меню стикера"
     style={{left:panelLeft,top:panelTop,width:panelWidth,maxHeight:Math.max(100,window.innerHeight-panelTop-12)}}>
-    {confirmDestroy?<div className="destroy-confirm">
-      <p role="status">Уничтожить стикер? Его нельзя будет восстановить.</p>
-      <output>{error}</output>
-      <div className="row">
-        <button type="button" autoFocus onClick={()=>setConfirmDestroy(false)}>Оставить</button>
-        <button type="button" className="destroy-button" onClick={()=>void removeSticker(menu.task.id)}>Да, уничтожить</button>
-      </div>
-    </div>:renderEditor()}</div>}</>
+    {renderEditor()}</div>}
+    {lastDeleted&&<div className="undo-toast" role="status">Удалено · {lastDeleted.task.title||'Пустой стикер'} <button onClick={()=>void restore()}>Вернуть</button></div>}</>
 }
 createRoot(document.getElementById('root')!).render(<App/>)

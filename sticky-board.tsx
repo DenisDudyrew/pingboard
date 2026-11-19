@@ -32,12 +32,14 @@ export function notePosition(index:number):Point {
   return {x:28+(index%3)*196,y:34+Math.floor(index/3)*196}
 }
 
-export function StickyBoard<T extends Note>({notes, visible, surface, customize, add, edit, move, editingId, renderEditor}:{
+export function StickyBoard<T extends Note>({notes, visible, surface, customize, add, edit, move, editingId, renderEditor, initialCamera, remember}:{
+  initialCamera:Point & {zoom:number}, remember:(state:Point & {zoom:number})=>void,
   notes:T[], visible:Set<string>, surface:string, customize:(surface:string)=>void,
   add:(position:Point,paper?:string)=>void, edit:(note:T,anchor:HTMLElement)=>void, move:(id:string,position:Point)=>Promise<boolean>, editingId?:string, renderEditor:()=>ReactNode
 }) {
-  const [camera,setCamera]=useState<Point>({x:0,y:0})
-  const [zoom,setZoom]=useState(1)
+  const [camera,setCamera]=useState<Point>(initialCamera)
+  const [zoom,setZoom]=useState(initialCamera.zoom)
+  function changeZoom(value:number){setZoom(value);remember({...camera,zoom:value})}
   const [preview,setPreview]=useState<{id:string,point:Point}|null>(null)
   const [panning,setPanning]=useState(false)
   const viewport=useRef<HTMLDivElement>(null)
@@ -75,6 +77,11 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
     if(!current||event.pointerId!==current.pointer)return
     gesture.current=null
     event.stopPropagation()
+    if(!current.id&&current.moved){
+      const finalCamera=cancel?camera:position(current,displacement(event,current))
+      setCamera(finalCamera)
+      remember({...finalCamera,zoom})
+    }
     setPanning(false)
     if(!current.id||!current.moved)return
     suppressClick.current=current.id
@@ -156,10 +163,10 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
       <label>Фон доски<select value={surface} onChange={event=>customize(event.target.value)}>{surfaces.map(value=><option key={value}>{value}</option>)}</select></label>
     </div>
     <div className="zoom-controls">
-        <button aria-label="Уменьшить масштаб" disabled={zoom<=0.5} onClick={()=>setZoom(Math.max(0.5,zoom-0.1))}>−</button>
+        <button aria-label="Уменьшить масштаб" disabled={zoom<=0.5} onClick={()=>changeZoom(Math.max(0.5,zoom-0.1))}>−</button>
         <output aria-label="Масштаб">{Math.round(zoom*100)}%</output>
-        <button aria-label="Увеличить масштаб" disabled={zoom>=1.5} onClick={()=>setZoom(Math.min(1.5,zoom+0.1))}>+</button>
-        <button onClick={()=>{setCamera({x:0,y:0});setZoom(1)}}>В начало</button>
+        <button aria-label="Увеличить масштаб" disabled={zoom>=1.5} onClick={()=>changeZoom(Math.min(1.5,zoom+0.1))}>+</button>
+        <button onClick={()=>{setCamera({x:0,y:0});setZoom(1);remember({x:0,y:0,zoom:1})}}>В начало</button>
     </div>
   </div>
 }

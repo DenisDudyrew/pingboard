@@ -24,4 +24,25 @@ export function destroySticker(rect: DOMRect, color: string, title?: string | nu
     if (event.target === ghost && !event.pseudoElement) ghost.remove()
   })
   window.setTimeout(() => ghost.remove(), 2400)
+  return ()=>ghost.remove()
+}
+
+const celebrations=[
+  ['spring','✓'],['stamp','ГОТОВО'],['star','✦'],['flip','✓'],
+  ['rocket','↑'],['orbit','★'],['wave','〰'],['bloom','✿']
+] as const
+let lastCelebration=''
+export function celebrate(rect:DOMRect){
+  if(!rect.width||window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)return
+  const choices=celebrations.filter(([name])=>name!==lastCelebration)
+  const [name,symbol]=choices[Math.floor(Math.random()*choices.length)]
+  lastCelebration=name
+  const badge=document.createElement('span')
+  badge.className='celebration'
+  badge.textContent=symbol
+  badge.setAttribute('aria-hidden','true')
+  Object.assign(badge.style,{left:rect.left+rect.width/2+'px',top:rect.top+rect.height/2+'px',animationName:'done-'+name})
+  document.body.append(badge)
+  badge.addEventListener('animationend',()=>badge.remove(),{once:true})
+  window.setTimeout(()=>badge.remove(),2200)
 }
