@@ -34,6 +34,14 @@ test('Интерфейс восстанавливает настройки и о
   }}}
   window.eval(bundle)
   const doc=window.document
+  await until(()=>doc.querySelector('.sticky'))
+  fail=false
+  doc.querySelector('.sticky').dispatchEvent(new window.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}))
+  await until(()=>JSON.parse(tasks)[0].position?.x===48)
+  await until(()=>doc.querySelector('.sticky').style.left==='48px')
+  fail=true
+  const kanban=[...doc.querySelectorAll('button')].find(b=>b.textContent==='Канбан')
+  kanban.click()
   await until(()=>doc.querySelector('.card'))
   const drop=()=>{
     const event=new window.Event('drop',{bubbles:true,cancelable:true})
