@@ -1,11 +1,11 @@
 import {destroySticker} from './sticker-effects'
-import {StickyBoard, PaperPalette, paperDragType, notePosition, paperColors, surfaces, type Point} from './sticky-board'
+import {StickyBoard, PaperPalette, paperDragType, notePosition, paperColors, surfaces, pinColors, defaultPinColor, type PinColor, type Point} from './sticky-board'
 import {boardColumns} from './board-view'
 import {reminderChanges} from './reminders'
 import {useEffect,useRef,useState} from 'react'
 import {createRoot} from 'react-dom/client'
 
-type Task={id:string,title:string,note:string,due:string,area:string,stage:number,paper?:string,position?:Point,pinged?:boolean,tags?:string,steps?:{id:string,text:string,done:boolean}[]}
+type Task={id:string,title:string,note:string,due:string,area:string,stage:number,paper?:string,pinColor?:PinColor,position?:Point,pinged?:boolean,tags?:string,steps?:{id:string,text:string,done:boolean}[]}
 const views=['Доска','Канбан','Сегодня'] as const
 type View=typeof views[number]
 const stages=['В планах','В работе','Готово']
@@ -19,17 +19,20 @@ function App(){
   const [searchOpen,setSearchOpen]=useState(false)
   const searchToggle=useRef<HTMLButtonElement>(null)
   const [confirmDestroy,setConfirmDestroy]=useState(false)
+  const [detailsOpen,setDetailsOpen]=useState(false)
+  const editor=useRef<HTMLFormElement>(null)
   const [draft,setDraft]=useState<Task|null>(null),[over,setOver]=useState(-1)
   const [now,setNow]=useState(Date.now()),[notify,setNotify]=useState(false)
-  const [menu,setMenu]=useState<{task:Task,anchor:HTMLElement}|null>(null)
+  const [menu,setMenu]=useState<{task:Task,anchor:HTMLElement,bounds:DOMRect}|null>(null)
   const panel=useRef<HTMLDivElement>(null), busy=useRef(false)
   function closeMenu(){
-    setMenu(null);setDraft(null);setConfirmDestroy(false)
+    setMenu(null);setDraft(null);setDetailsOpen(false);setConfirmDestroy(false)
   }
   useEffect(()=>{
     if(!menu)return
     function outside(event:PointerEvent){
-      if(panel.current?.contains(event.target as Node))return
+      const target=event.target as Node
+      if(panel.current?.contains(target)||editor.current?.contains(target)|| (target instanceof Element && target.closest<HTMLElement>('[data-sticker-id]')?.dataset.stickerId===menu?.task.id))return
       closeMenu()
     }
     function escape(event:KeyboardEvent){
@@ -38,18 +41,18 @@ function App(){
       menu?.anchor.focus()
     }
     const scroll=()=>closeMenu()
-    document.addEventListener('pointerdown',outside)
+    document.addEventListener('pointerdown',outside,true)
     document.addEventListener('keydown',escape)
     window.addEventListener('resize',scroll)
     window.addEventListener('scroll',scroll)
     return ()=>{
-      document.removeEventListener('pointerdown',outside)
+      document.removeEventListener('pointerdown',outside,true)
       document.removeEventListener('keydown',escape)
       window.removeEventListener('resize',scroll)
       window.removeEventListener('scroll',scroll)
     }
   },[menu])
-  const anchor=menu?.anchor.getBoundingClientRect()
+  const anchor=menu?.anchor.isConnected?menu.anchor.getBoundingClientRect():menu?.bounds
   const panelWidth=Math.min(340,window.innerWidth-24)
   const beside=anchor&&(anchor.right+panelWidth+20<=window.innerWidth?anchor.right+8:anchor.left-panelWidth-8)
   const panelLeft=Math.max(12,Math.min(beside??12,window.innerWidth-panelWidth-12))
@@ -121,17 +124,36 @@ function App(){
     if(bounds&&background)destroySticker(bounds,color||background,title)
   }
   function openStickerMenu(task:Task,anchor:HTMLElement){
-    setDraft(null);setConfirmDestroy(false);setMenu({task,anchor})
+    setDraft(null);setDetailsOpen(false);setConfirmDestroy(false);setMenu({task,anchor,bounds:anchor.getBoundingClientRect()})
   }
   function add(stage=0,position?:Point,paper=paperColors[tasks.length%paperColors.length] as string){
     void save([...tasks,{id:crypto.randomUUID(),title:'',note:'',area:filter==='Личное'?filter:'Работа',due:'',stage,position,paper}])
   }
   function move(id:string,position:Point){
-    void save(tasks.map(task=>task.id===id?{...task,position}:task))
+    return save(tasks.map(task=>task.id===id?{...task,position}:task))
   }
   function field<K extends keyof Task>(k:K,v:Task[K]){if(draft)setDraft({...draft,[k]:v})}
   const columns=boardColumns(tasks,today,filter,query,now)
   const overdue=(t:Task)=>!!t.due&&t.stage!==2&&Date.parse(t.due)<=now
+  function renderEditor(){
+    if(!draft)return null
+    return <form ref={editor} className="sticker-editor" aria-label="Редактирование стикера" onSubmit={async e=>{e.preventDefault();if(confirmDestroy)return;const title=draft.title.trim();if(!title)return;const old=tasks.find(t=>t.id===draft.id);const t={...draft,title,steps:draft.steps?.filter(step=>step.text.trim()),position:draft.position??notePosition(old?tasks.indexOf(old):tasks.length),pinged:old?.due===draft.due&&old?.pinged};if(await save(old?tasks.map(a=>a.id===t.id?t:a):[...tasks,t]))closeMenu()}}><div className="editor-actions">
+    <button type="button" aria-label="Закрыть" title="Закрыть" onClick={closeMenu}>×</button>
+    <button type="submit" aria-label="Сохранить" title="Сохранить">✓</button>
+  </div>
+  <label className="editor-title"><span className="sr-only">Задача</span><textarea key={String(detailsOpen)} autoFocus required maxLength={200} placeholder="Задача" value={draft.title} onChange={e=>field('title',e.target.value)}/></label>
+  {detailsOpen?<div className="editor-details"><label>Заметка<textarea value={draft.note} onChange={e=>field('note',e.target.value)}/></label><label>Метки через запятую<input value={draft.tags||''} onChange={e=>field('tags',e.target.value)}/></label>
+  <label>Цвет стикера<select value={draft.paper??paperColors[Math.max(0,tasks.findIndex(task=>task.id===draft.id))%paperColors.length]} onChange={e=>field('paper',e.target.value)}>{paperColors.map(color=><option key={color}>{color}</option>)}</select></label>
+  <label>Цвет пина<select value={draft.pinColor??defaultPinColor(draft.id)} onChange={e=>field('pinColor',e.target.value as PinColor)}>{pinColors.map(color=><option key={color}>{color}</option>)}</select></label>
+  <fieldset><legend>Чек-лист</legend>{draft.steps?.map(step=><div className="step" key={step.id}>
+    <input type="checkbox" aria-label={'Выполнено: '+step.text} checked={step.done} onChange={()=>field('steps',draft.steps?.map(item=>item.id===step.id?{...item,done:!item.done}:item))}/>
+    <input aria-label="Название шага" value={step.text} onChange={e=>field('steps',draft.steps?.map(item=>item.id===step.id?{...item,text:e.target.value}:item))}/>
+    <button type="button" aria-label={'Удалить шаг '+step.text} onClick={()=>field('steps',draft.steps?.filter(item=>item.id!==step.id))}>×</button></div>)}
+    <button type="button" onClick={()=>field('steps',[...(draft.steps||[]),{id:crypto.randomUUID(),text:'',done:false}])}>+ Шаг</button></fieldset>
+  <label>Сфера<select value={draft.area} onChange={e=>field('area',e.target.value)}><option>Работа</option><option>Личное</option></select></label><label>Статус<select value={draft.stage} onChange={e=>field('stage',+e.target.value)}>{stages.map((s,i)=><option value={i} key={s}>{s}</option>)}</select></label><label>Напомнить в<input type="datetime-local" value={draft.due} onChange={e=>field('due',e.target.value)}/></label></div>:<button type="button" className="editor-expand" onClick={()=>setDetailsOpen(true)}>Детали</button>}
+  {!boardView||detailsOpen?<output>{error}</output>:null}
+  </form>
+  }
   function card(t:Task){return <button className={'card paper-'+paperColors.findIndex(color=>color===t.paper)} key={t.id} data-sticker-id={t.id} draggable onDragStart={e=>e.dataTransfer.setData('text/plain',t.id)} onDragEnd={()=>setOver(-1)} onDoubleClick={e=>openStickerMenu(t,e.currentTarget)} onContextMenu={e=>{e.preventDefault();openStickerMenu(t,e.currentTarget)}} onClick={e=>{if(e.detail===0)openStickerMenu(t,e.currentTarget)}}><small>{t.area}</small><strong>{t.title||'Пустой стикер'}</strong><span className="tags">{Array.from(new Set((t.tags||'').split(',').map(x=>x.trim()).filter(Boolean))).map(tag=><span key={tag} style={{background:['#e7dcff','#ffddb9','#cbe9df'][tag.length%3]}}>{tag}</span>)}</span>{!!t.steps?.length&&<small>✓ {t.steps.filter(step=>step.done).length} / {t.steps.length}</small>}{t.due&&<small>{overdue(t)?'Пора · ':'◷ '}{new Date(t.due).toLocaleString('ru',{dateStyle:'short',timeStyle:'short'})}</small>}</button>}
   return <><header className={boardView?'board-header':undefined}>
     <b className="logo"><span className="mark" aria-hidden="true">✦</span>пингборд</b>
@@ -154,7 +176,7 @@ function App(){
     {!native&&'Notification' in window&&Notification.permission==='default'&&<button onClick={async()=>{await Notification.requestPermission();setNotify(!notify)}}>Включить уведомления</button>}
   </nav><output>{error}</output>{!today&&tasks.some(overdue)&&<p className={boardView?'board-overdue':undefined}><button onClick={()=>preferences('Сегодня',filter)}>Пора заняться · {tasks.filter(overdue).length} →</button></p>}
   {view==='Доска'?ready&&<StickyBoard notes={tasks} visible={new Set(columns.flat().map(task=>task.id))} surface={surface}
-    customize={background=>preferences(view,filter,background)} add={(position,paper)=>add(0,position,paper)} edit={openStickerMenu} move={move}/>:<div id="board">{(today?['Пора заняться','Сегодня до конца дня','Ближайшее']:stages).map((s,i)=>{
+    customize={background=>preferences(view,filter,background)} add={(position,paper)=>add(0,position,paper)} edit={openStickerMenu} move={move} editingId={detailsOpen?undefined:draft?.id} renderEditor={renderEditor}/>:<div id="board">{(today?['Пора заняться','Сегодня до конца дня','Ближайшее']:stages).map((s,i)=>{
     const group=columns[i]
     return <section key={s} className={over===i?'over':''} onDragOver={e=>{if(!today){e.preventDefault();setOver(i)}}} onDrop={e=>{e.preventDefault();setOver(-1);if(today)return;const paper=e.dataTransfer.getData(paperDragType);if(paperColors.some(color=>color===paper)){add(i,undefined,paper);return}const id=e.dataTransfer.getData('text/plain');if(tasks.some(t=>t.id===id&&t.stage!==i))void save(tasks.map(t=>t.id===id?{...t,stage:i}:t))}}><h2>{s}<small>{group.length}</small></h2>{group.map(card)}{today&&!group.length&&<small>Задач нет</small>}{!today&&<button className="add" disabled={!ready} onClick={()=>add(i)}>+ Стикер</button>}</section>
   })}</div>}{menu&&!draft&&!confirmDestroy&&<div ref={panel} className="sticker-actions" role="group" aria-label="Действия со стикером" style={{left:actionsLeft,top:actionsTop}}>
@@ -164,7 +186,7 @@ function App(){
     <button type="button" className="destroy-button" aria-label="Уничтожить" title="Уничтожить" onClick={()=>setConfirmDestroy(true)}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v6m4-6v6"/></svg>
     </button>
-  </div>}{menu&&(draft||confirmDestroy)&&<div ref={panel} className="sticker-panel" role="dialog" aria-label="Меню стикера"
+  </div>}{menu&&(confirmDestroy||(draft&&(!boardView||detailsOpen)))&&<div ref={panel} className="sticker-panel" role="dialog" aria-label="Меню стикера"
     style={{left:panelLeft,top:panelTop,width:panelWidth,maxHeight:Math.max(100,window.innerHeight-panelTop-12)}}>
     {confirmDestroy?<div className="destroy-confirm">
       <p role="status">Уничтожить стикер? Его нельзя будет восстановить.</p>
@@ -173,13 +195,6 @@ function App(){
         <button type="button" autoFocus onClick={()=>setConfirmDestroy(false)}>Оставить</button>
         <button type="button" className="destroy-button" onClick={()=>void removeSticker(menu.task.id)}>Да, уничтожить</button>
       </div>
-    </div>:draft&&<form onSubmit={async e=>{e.preventDefault();if(confirmDestroy)return;const title=draft.title.trim();if(!title)return;const old=tasks.find(t=>t.id===draft.id);const t={...draft,title,steps:draft.steps?.filter(step=>step.text.trim()),position:draft.position??notePosition(old?tasks.indexOf(old):tasks.length),pinged:old?.due===draft.due&&old?.pinged};if(await save(old?tasks.map(a=>a.id===t.id?t:a):[...tasks,t]))closeMenu()}}><h2>{draft.title?'Стикер':'Заполни стикер'}</h2><label>Задача<input autoFocus required maxLength={200} value={draft.title} onChange={e=>field('title',e.target.value)}/></label><details className="note-details"><summary>Детали</summary><label>Заметка<textarea value={draft.note} onChange={e=>field('note',e.target.value)}/></label><label>Метки через запятую<input value={draft.tags||''} onChange={e=>field('tags',e.target.value)}/></label>
-  <label>Цвет стикера<select value={draft.paper??paperColors[Math.max(0,tasks.findIndex(task=>task.id===draft.id))%paperColors.length]} onChange={e=>field('paper',e.target.value)}>{paperColors.map(color=><option key={color}>{color}</option>)}</select></label>
-  <fieldset><legend>Чек-лист</legend>{draft.steps?.map(step=><div className="step" key={step.id}>
-    <input type="checkbox" aria-label={'Выполнено: '+step.text} checked={step.done} onChange={()=>field('steps',draft.steps?.map(item=>item.id===step.id?{...item,done:!item.done}:item))}/>
-    <input aria-label="Название шага" value={step.text} onChange={e=>field('steps',draft.steps?.map(item=>item.id===step.id?{...item,text:e.target.value}:item))}/>
-    <button type="button" aria-label={'Удалить шаг '+step.text} onClick={()=>field('steps',draft.steps?.filter(item=>item.id!==step.id))}>×</button></div>)}
-    <button type="button" onClick={()=>field('steps',[...(draft.steps||[]),{id:crypto.randomUUID(),text:'',done:false}])}>+ Шаг</button></fieldset>
-  <label>Сфера<select value={draft.area} onChange={e=>field('area',e.target.value)}><option>Работа</option><option>Личное</option></select></label><label>Статус<select value={draft.stage} onChange={e=>field('stage',+e.target.value)}>{stages.map((s,i)=><option value={i} key={s}>{s}</option>)}</select></label><label>Напомнить в<input type="datetime-local" value={draft.due} onChange={e=>field('due',e.target.value)}/></label></details><output>{error}</output><div className="row"><button type="button" onClick={closeMenu}>Отмена</button><button className="primary">Сохранить</button></div></form>}</div>}</>
+    </div>:renderEditor()}</div>}</>
 }
 createRoot(document.getElementById('root')!).render(<App/>)

@@ -1,4 +1,4 @@
-import {useRef, useState, type PointerEvent} from 'react'
+import {useRef, useState, type PointerEvent, type ReactNode} from 'react'
 
 export const paperColors = ['Лимон','Сирень','Мята','Персик','Голубой'] as const
 export const paperDragType='application/x-pingboard-paper'
@@ -11,29 +11,43 @@ export function PaperPalette({add,disabled=false}:{add:(paper:string)=>void,disa
   </div>
 }
 export const surfaces = ['Сетка','Облако','Графит','Линии','Мята'] as const
+export const pinColors=['Слива','Коралл','Мята','Лазурь','Янтарь'] as const
+export type PinColor=typeof pinColors[number]
+
+function pinSeed(id:string){
+  let seed=0
+  for(const character of id)seed=(Math.imul(seed,31)+character.charCodeAt(0))>>>0
+  return seed
+}
+
+export function defaultPinColor(id:string):PinColor{
+  return pinColors[pinSeed(id)%pinColors.length]
+}
+
 export type Point = {x:number,y:number}
-type Note = {id:string,title:string,note:string,stage:number,paper?:string,position?:Point}
+type Note = {id:string,title:string,note:string,stage:number,paper?:string,pinColor?:PinColor,position?:Point}
 type Gesture = {pointer:number,id?:string,start:Point,origin:Point,moved:boolean}
 
 export function notePosition(index:number):Point {
   return {x:28+(index%3)*196,y:34+Math.floor(index/3)*196}
 }
 
-export function StickyBoard<T extends Note>({notes, visible, surface, customize, add, edit, move}:{
+export function StickyBoard<T extends Note>({notes, visible, surface, customize, add, edit, move, editingId, renderEditor}:{
   notes:T[], visible:Set<string>, surface:string, customize:(surface:string)=>void,
-  add:(position:Point,paper?:string)=>void, edit:(note:T,anchor:HTMLElement)=>void, move:(id:string,position:Point)=>void
+  add:(position:Point,paper?:string)=>void, edit:(note:T,anchor:HTMLElement)=>void, move:(id:string,position:Point)=>Promise<boolean>, editingId?:string, renderEditor:()=>ReactNode
 }) {
   const [camera,setCamera]=useState<Point>({x:0,y:0})
   const [zoom,setZoom]=useState(1)
   const [preview,setPreview]=useState<{id:string,point:Point}|null>(null)
   const [panning,setPanning]=useState(false)
   const viewport=useRef<HTMLDivElement>(null)
+  const committing=useRef(false)
   const gesture=useRef<Gesture|null>(null)
   const suppressClick=useRef<string|null>(null)
 
   function start(event:PointerEvent<HTMLElement>,origin:Point,id?:string){
-    if(event.button!==0||gesture.current)return
-    event.stopPropagation()
+    if(id)event.stopPropagation()
+    if(event.button!==0||gesture.current||(id&&committing.current))return
     event.currentTarget.setPointerCapture(event.pointerId)
     suppressClick.current=null
     gesture.current={pointer:event.pointerId,id,start:{x:event.clientX,y:event.clientY},origin,moved:false}
@@ -48,6 +62,7 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
   function drag(event:PointerEvent<HTMLElement>){
     const current=gesture.current
     if(!current||event.pointerId!==current.pointer)return
+    event.stopPropagation()
     const delta=displacement(event,current)
     if(!current.moved&&Math.hypot(delta.x,delta.y)<5)return
     current.moved=true
@@ -59,10 +74,18 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
     const current=gesture.current
     if(!current||event.pointerId!==current.pointer)return
     gesture.current=null
-    setPanning(false);setPreview(null)
+    event.stopPropagation()
+    setPanning(false)
     if(!current.id||!current.moved)return
     suppressClick.current=current.id
-    if(!cancel)move(current.id,position(current,displacement(event,current)))
+    if(cancel){setPreview(null);return}
+    const point=position(current,displacement(event,current))
+    setPreview({id:current.id,point})
+    committing.current=true
+    void move(current.id,point).finally(()=>{
+      committing.current=false
+      setPreview(null)
+    })
   }
   return <div className="studio">
     <div ref={viewport} className={'pinboard surface-'+surfaces.indexOf(surface as typeof surfaces[number])+(panning?' panning':'')} aria-label="Доска со стикерами"
@@ -84,9 +107,17 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
           const moving=preview?.id===note.id
           const point=moving?preview.point:note.position??notePosition(index)
           const color=paperColors.indexOf(note.paper as typeof paperColors[number])
+          const paperClass=`paper-${color<0?index%paperColors.length:color}`
+          const seed=pinSeed(note.id)
+          const pin=<span className={`pin pin-${pinColors.indexOf(note.pinColor??defaultPinColor(note.id))}`}
+            style={{left:18+Math.floor(seed/5)%120,top:4+Math.floor(seed/601)%4}} aria-hidden="true"/>
+          if(editingId===note.id)return <div key={note.id} data-sticker-id={note.id}
+            className={`sticky sticky-editing ${paperClass}`} style={{left:point.x,top:point.y}} onPointerDown={event=>event.stopPropagation()}>
+            {renderEditor()}
+          </div>
           return <button key={note.id} data-sticker-id={note.id} type="button"
-            className={`sticky paper-${color<0?index%paperColors.length:color}${moving?' moving':''}${note.stage===2?' completed':''}`}
-            style={{left:point.x,top:point.y}}
+            className={`sticky ${paperClass}${moving?' moving':''}${note.stage===2?' completed':''}`}
+            style={{left:0,top:0,translate:`${point.x}px ${point.y}px`}}
             onPointerDown={event=>start(event,point,note.id)}
             onClick={event=>{
               if(event.detail===0)edit(note,event.currentTarget)
@@ -98,9 +129,9 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
               const offset=offsets[event.key]
               if(!offset)return
               event.preventDefault()
-              move(note.id,{x:point.x+offset.x,y:point.y+offset.y})
+              void move(note.id,{x:point.x+offset.x,y:point.y+offset.y})
             }}>
-            <span className="pin" aria-hidden="true"/>
+            {pin}
             <strong>{note.title||'Пустой стикер'}</strong>
             <span className="sticky-copy">{note.note}</span>
             {note.stage===2&&<span className="sticky-check" aria-label="Выполнено">✓</span>}
