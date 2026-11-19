@@ -1,0 +1,60 @@
+name: Desktop release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm test
+      - run: cargo install tauri-cli --version '^2' --locked
+      - run: npm run build
+      - name: Verify installer
+        run: |
+          images=(src-tauri/target/release/bundle/dmg/*.dmg)
+          test "${#images[@]}" = 1
+          hdiutil verify "${images[0]}"
+          mkdir installers
+          cp "${images[0]}" installers/
+          (cd installers && shasum -a 256 *.dmg > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Pingboard-macOS-Apple-Silicon
+          path: installers/
+          if-no-files-found: error
+  publish:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Pingboard-macOS-Apple-Silicon
+          path: installers
+      - name: Publish new versions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$(jq -er .version src-tauri/tauri.conf.json)"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists"
+            exit 0
+          fi
+          gh release create "$tag" installers/* --target "$GITHUB_SHA" --title "Pingboard $tag" --generate-notes

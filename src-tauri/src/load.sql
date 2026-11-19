@@ -1,0 +1,1 @@
+SELECT COALESCE((SELECT tasks FROM board WHERE id=1),'[]')

@@ -1,0 +1,30 @@
+{
+  "productName": "Pingboard",
+  "version": "0.3.1",
+  "identifier": "app.pingboard.desktop",
+  "build": {
+    "frontendDist": "../dist",
+    "beforeBuildCommand": "npm run desktop-assets",
+    "beforeDevCommand": "npm run desktop-assets"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Пингборд",
+        "width": 1100,
+        "height": 760
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "app",
+      "dmg"
+    ]
+  }
+}
