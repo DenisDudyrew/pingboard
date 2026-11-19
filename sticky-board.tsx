@@ -65,26 +65,6 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
     if(!cancel)move(current.id,position(current,displacement(event,current)))
   }
   return <div className="studio">
-    <div className="studio-toolbar">
-      <label>Фон доски<select value={surface} onChange={event=>customize(event.target.value)}>{surfaces.map(value=><option key={value}>{value}</option>)}</select></label>
-      <div className="zoom-controls">
-        <PaperPalette add={paper=>{
-          const width=viewport.current?.clientWidth??400
-          const height=viewport.current?.clientHeight??360
-          const point={x:Math.round((width/2-camera.x)/zoom-84),y:Math.round((height/2-camera.y)/zoom-84)}
-          const occupied=notes.map((note,index)=>note.position??notePosition(index))
-          while(occupied.some(other=>Math.abs(other.x-point.x)<35&&Math.abs(other.y-point.y)<35)){
-            point.x+=36
-            point.y+=16
-          }
-          add(point,paper)
-        }}/>
-        <button aria-label="Уменьшить масштаб" disabled={zoom<=0.5} onClick={()=>setZoom(Math.max(0.5,zoom-0.1))}>−</button>
-        <output aria-label="Масштаб">{Math.round(zoom*100)}%</output>
-        <button aria-label="Увеличить масштаб" disabled={zoom>=1.5} onClick={()=>setZoom(Math.min(1.5,zoom+0.1))}>+</button>
-        <button onClick={()=>{setCamera({x:0,y:0});setZoom(1)}}>В начало</button>
-      </div>
-    </div>
     <div ref={viewport} className={'pinboard surface-'+surfaces.indexOf(surface as typeof surfaces[number])+(panning?' panning':'')} aria-label="Доска со стикерами"
       style={{backgroundPosition:`${camera.x}px ${camera.y}px`}}
       onPointerDown={event=>start(event,camera)} onPointerMove={drag} onPointerUp={event=>end(event)}
@@ -128,6 +108,27 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
         })}
       </div>
     </div>
-    <p className="board-controls-help">Пустой фон — перемещение по доске · Двойной или правый щелчок — меню стикера</p>
+    <div className="studio-palette">
+        <PaperPalette add={paper=>{
+          const width=viewport.current?.clientWidth??400
+          const height=viewport.current?.clientHeight??360
+          const point={x:Math.round((width/2-camera.x)/zoom-84),y:Math.round((height/2-camera.y)/zoom-84)}
+          const occupied=notes.map((note,index)=>note.position??notePosition(index))
+          while(occupied.some(other=>Math.abs(other.x-point.x)<35&&Math.abs(other.y-point.y)<35)){
+            point.x+=36
+            point.y+=16
+          }
+          add(point,paper)
+        }}/>
+    </div>
+    <div className="studio-toolbar">
+      <label>Фон доски<select value={surface} onChange={event=>customize(event.target.value)}>{surfaces.map(value=><option key={value}>{value}</option>)}</select></label>
+    </div>
+    <div className="zoom-controls">
+        <button aria-label="Уменьшить масштаб" disabled={zoom<=0.5} onClick={()=>setZoom(Math.max(0.5,zoom-0.1))}>−</button>
+        <output aria-label="Масштаб">{Math.round(zoom*100)}%</output>
+        <button aria-label="Увеличить масштаб" disabled={zoom>=1.5} onClick={()=>setZoom(Math.min(1.5,zoom+0.1))}>+</button>
+        <button onClick={()=>{setCamera({x:0,y:0});setZoom(1)}}>В начало</button>
+    </div>
   </div>
 }

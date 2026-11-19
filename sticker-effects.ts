@@ -23,5 +23,5 @@ export function destroySticker(rect: DOMRect, color: string, title?: string | nu
   ghost.addEventListener('animationend', event => {
     if (event.target === ghost && !event.pseudoElement) ghost.remove()
   })
-  window.setTimeout(() => ghost.remove(), 1100)
+  window.setTimeout(() => ghost.remove(), 2400)
 }

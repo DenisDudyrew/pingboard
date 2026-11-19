@@ -5,13 +5,11 @@ section.over{outline:3px solid #8357d0;transform:translateY(-3px)}section,.card{
 #root{max-width:1480px;padding:22px clamp(14px,3.5vw,54px)}
 #root h1{font-size:clamp(42px,6vw,76px);margin:22px 0 4px;line-height:1}
 #root nav{margin:18px 0 12px}
-.studio{background:#fffdf5;border:1px solid #d6d0c3;border-radius:25px;padding:9px;box-shadow:0 10px 35px #2a243412}
 .studio-toolbar,.zoom-controls{display:flex;align-items:center;justify-content:space-between;gap:7px;flex-wrap:wrap}
-.studio-toolbar{padding:5px 7px 10px}
 .studio-toolbar label{display:flex;align-items:center;gap:8px;margin:0;font-size:13px}
-.studio-toolbar button,.studio-toolbar select{padding:6px 10px;font-size:13px}
+.zoom-controls button,.studio-toolbar select{padding:6px 10px;font-size:13px}
 .zoom-controls output{min-width:42px;text-align:center;color:inherit;font-size:13px}
-.pinboard{height:clamp(340px,61vh,850px);position:relative;isolation:isolate;overflow:hidden;border-radius:17px;cursor:grab;touch-action:none;user-select:none;background-color:#eae7f2;background-image:radial-gradient(#8d849e77 1px,transparent 1px);background-size:22px 22px}
+.pinboard{position:absolute;inset:0;isolation:isolate;overflow:hidden;cursor:grab;touch-action:none;user-select:none;background-color:#eae7f2;background-image:radial-gradient(#8d849e77 1px,transparent 1px);background-size:22px 22px}
 .pinboard.panning,.sticky.moving{cursor:grabbing}
 
 .surface-2{background-color:#343141;background-image:radial-gradient(#c5b5e05e 1px,transparent 1px)}
@@ -28,7 +26,6 @@ section.over{outline:3px solid #8357d0;transform:translateY(-3px)}section,.card{
 .sticky-check{position:absolute;right:8px;bottom:7px;color:#245831;background:#ffffff75;border-radius:100%;width:24px;height:24px;display:grid;place-items:center}
 .paper-1{--paper:#d9caff;--tilt:2deg}.paper-2{--paper:#bff0ce;--tilt:-1deg}.paper-3{--paper:#ffcbb4;--tilt:1deg}.paper-4{--paper:#bce8ff;--tilt:-2deg}
 .pin{position:absolute;top:7px;left:calc(50% - 5px);height:10px;width:10px;border-radius:50%;background:radial-gradient(circle at 32% 25%,#ffad9e,#e34860 48%,#952746);box-shadow:1px 3px 3px #34133170;pointer-events:none}
-.board-controls-help{margin:9px 8px 2px;font-size:12px;color:#625e70}
 dialog{max-height:90vh;overflow:auto}
 @keyframes pin-in{from{opacity:0;transform:translateY(-13px) rotate(5deg) scale(.91)}to{opacity:1;transform:rotate(var(--tilt))}}
 
@@ -44,8 +41,6 @@ button,input,select,textarea{border-color:#e5dfee}
 .switch button,nav button{border:0;background:transparent;font-size:13px;font-weight:650}
 .switch .active,nav .active{background:#201a2c;color:#fff}
 nav input{flex:1;min-width:125px}
-.studio{padding:7px;border:1px solid #e6e0ee;background:white;box-shadow:0 18px 48px #31244612}
-.studio-toolbar{padding:5px 7px 9px}
 .pinboard{background-color:#ede7ff;background-image:radial-gradient(#a393bf88 1px,transparent 1px)}
 
 .pinboard.surface-2{background-color:#292537;background-image:radial-gradient(#cbbdeb65 1px,transparent 1px)}
@@ -68,31 +63,33 @@ dialog h2{font-size:26px;letter-spacing:-.055em}
 dialog button.primary{background:#d9ff57;color:#211d2d;border-color:transparent}
 
 .destroy-button{color:#a23754}
-.sticker-ghost{position:fixed;z-index:1000;pointer-events:none;overflow:hidden;padding:20px 14px;border-radius:8px;color:#211d2d;font-weight:750;overflow-wrap:anywhere;box-shadow:0 10px 25px #2b183544;animation-duration:.66s;animation-fill-mode:both}
-.effect-burn{animation-name:sticker-burn}
+.sticker-ghost{--effect-duration:1.55s;position:fixed;z-index:1000;pointer-events:none;overflow:hidden;padding:20px 14px;border-radius:8px;color:#211d2d;font-weight:750;overflow-wrap:anywhere;box-shadow:0 10px 25px #2b183544;animation-duration:var(--effect-duration);animation-fill-mode:both}
+.effect-burn{--effect-duration:1.8s;animation-name:sticker-burn}
 .effect-impact{animation-name:sticker-impact}
 .effect-shock{animation-name:sticker-shock}
 .effect-wind{animation-name:sticker-wind}
-.effect-slice{animation-name:sticker-slice;background-color:transparent!important;box-shadow:none;color:transparent}
+.effect-slice{--effect-duration:1.7s;overflow:visible;animation-name:sticker-slice;background-color:transparent!important;box-shadow:none;color:transparent}
 .effect-pixels{animation-name:sticker-pixels}
-.effect-fold{animation-name:sticker-fold}
+.effect-fold{--effect-duration:1.7s;animation-name:sticker-fold}
 .effect-burn::after,.effect-impact::after,.effect-shock::after{content:"";position:absolute;inset:0}
-.effect-burn::after{background:linear-gradient(transparent 40%,#ffbd36 82%,#ff5050);animation:ember .66s both}
-.effect-impact::after{background:radial-gradient(circle at 21% 40%,#292039 0 5px,transparent 6px),radial-gradient(circle at 67% 25%,#292039 0 4px,transparent 5px),radial-gradient(circle at 59% 71%,#292039 0 6px,transparent 7px);animation:ember .25s both}
-.effect-shock::after{background:#9ae9ff88;animation:ember .2s alternate 3}
-.effect-slice::before,.effect-slice::after{content:attr(data-title);position:absolute;inset:0;padding:inherit;background:var(--slice-paper,#fbf08b);color:#211d2d;animation-duration:.66s;animation-fill-mode:both}
+.effect-burn::after{background:linear-gradient(transparent 40%,#ffbd36 82%,#ff5050);animation:ember var(--effect-duration) both}
+.effect-impact::after{background:radial-gradient(circle at 21% 40%,#292039 0 5px,transparent 6px),radial-gradient(circle at 67% 25%,#292039 0 4px,transparent 5px),radial-gradient(circle at 59% 71%,#292039 0 6px,transparent 7px);animation:impact-marks var(--effect-duration) both}
+.effect-shock::after{background:#9ae9ff88;animation:shock-flash var(--effect-duration) both}
+.effect-slice::before,.effect-slice::after{content:attr(data-title);position:absolute;inset:0;padding:inherit;background:var(--slice-paper,#fbf08b);color:#211d2d;animation-duration:var(--effect-duration);animation-fill-mode:both}
 .effect-slice::before{clip-path:polygon(0 0,100% 0,0 100%);animation-name:slice-top}
 .effect-slice::after{clip-path:polygon(100% 0,100% 100%,0 100%);animation-name:slice-bottom}
+@keyframes impact-marks{0%,12%{opacity:0}17%,85%{opacity:1}to{opacity:0}}
+@keyframes shock-flash{0%,21%,41%,62%,to{opacity:0}12%,32%,51%{opacity:.8}}
 @keyframes ember{from{opacity:0}to{opacity:1}}
-@keyframes sticker-burn{30%{filter:saturate(1.7)}to{clip-path:inset(0 0 100%);opacity:0;filter:brightness(.45);transform:translateY(-16px) scale(.9)}}
-@keyframes sticker-impact{18%,43%{transform:translate(6px,3px) rotate(4deg)}28%{transform:translate(-5px,-2px) rotate(-3deg)}to{opacity:0;transform:translateY(38px) rotate(12deg) scale(.85)}}
+@keyframes sticker-burn{0%,18%{clip-path:inset(0 0 0);opacity:1}30%{filter:saturate(1.7)}78%{opacity:.9}to{clip-path:inset(0 0 100%);opacity:0;filter:brightness(.45);transform:translateY(-24px) scale(.9)}}
+@keyframes sticker-impact{18%,43%{transform:translate(6px,3px) rotate(4deg)}28%{transform:translate(-5px,-2px) rotate(-3deg)}58%{opacity:1;transform:translateY(3px) rotate(3deg)}to{opacity:0;transform:translateY(38px) rotate(12deg) scale(.85)}}
 @keyframes sticker-shock{12%,36%,58%{transform:translateX(5px) skewX(3deg)}24%,47%{transform:translateX(-5px) skewX(-3deg)}to{opacity:0;transform:scale(.88);filter:grayscale(1)}}
-@keyframes sticker-wind{18%{transform:translateX(-9px) rotate(-7deg)}to{opacity:0;transform:translate(220px,-95px) rotate(42deg) scale(.6)}}
+@keyframes sticker-wind{25%{transform:translateX(-14px) rotate(-9deg)}55%{opacity:1;transform:translate(54px,-20px) rotate(14deg)}to{opacity:0;transform:translate(220px,-95px) rotate(42deg) scale(.6)}}
 @keyframes sticker-slice{0%,62%{opacity:1}to{opacity:0}}
 @keyframes slice-top{25%{transform:translate(0)}to{transform:translate(-24px,-26px) rotate(-13deg)}}
 @keyframes slice-bottom{25%{transform:translate(0)}to{transform:translate(31px,31px) rotate(14deg)}}
 @keyframes sticker-pixels{35%{clip-path:polygon(0 0,80% 0,80% 20%,100% 20%,100% 80%,60% 80%,60% 100%,20% 100%,20% 80%,0 80%)}70%{clip-path:inset(25% 25%);filter:hue-rotate(70deg)}to{clip-path:inset(49%);opacity:0}}
-@keyframes sticker-fold{40%{transform:perspective(480px) rotateX(-62deg) scale(.94)}to{opacity:0;transform:perspective(480px) rotateX(-150deg) scale(.35)}}
+@keyframes sticker-fold{40%{transform:perspective(480px) rotateX(-62deg) scale(.94)}64%{opacity:1;transform:perspective(480px) rotateX(-104deg) scale(.76)}to{opacity:0;transform:perspective(480px) rotateX(-150deg) scale(.35)}}
 
 .pinboard.surface-1{background:#f2f1f8}
 .pinboard.surface-3{background-color:#f8f6f0;background-image:linear-gradient(#ded8cb 1px,transparent 1px);background-size:100% 26px}
@@ -103,5 +100,50 @@ dialog button.primary{background:#d9ff57;color:#211d2d;border-color:transparent}
 .sticker-panel button{padding:8px 11px;font-size:13px}
 .sticker-panel .primary{background:#d9ff57;color:#211d2d;border-color:transparent}
 .sticker-panel .destroy-confirm p{margin:0 0 10px;font-size:14px}
-.sticker-actions{gap:6px;justify-content:space-between}
+.sticker-actions{position:fixed;z-index:100;width:0;height:0}
+.sticker-actions button{
+  --angle:-125deg;--counter-angle:125deg;--button-color:#39245f;
+  position:absolute;left:-20px;top:-20px;display:grid;place-items:center;
+  width:40px;height:40px;padding:0;border:1px solid #ded4ee;border-radius:9px;
+  background:#faf8ff;color:var(--button-color);box-shadow:0 4px 16px #22183338;
+  transform:rotate(var(--angle)) translateX(49px) rotate(var(--counter-angle));
+  animation:sticker-action-in .38s cubic-bezier(.18,.78,.35,1.2) backwards;
+}
+.sticker-actions .destroy-button{--angle:-55deg;--counter-angle:55deg;--button-color:#a23754;animation-delay:.045s}
+.sticker-actions button:hover{background:#eee6ff}
+.sticker-actions .destroy-button:hover{background:#ffe5ec}
+.sticker-actions button:focus-visible{outline:2px solid #8357d0;outline-offset:2px}
+.sticker-actions svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+@keyframes sticker-action-in{
+  from{opacity:0;transform:rotate(-170deg) translateX(10px) rotate(170deg) scale(.6)}
+}
+#root:has(>.board-header){position:relative;max-width:none;margin:0;padding:0;height:100vh;height:100dvh;display:flex;flex-direction:column}
+.board-header{z-index:2;flex:none;flex-wrap:nowrap;gap:8px;padding:6px 14px;background:#f7f6fb}
+.board-header .logo{white-space:nowrap;font-size:20px}
+.board-header .switch{margin-left:auto}
+.board-header .switch button{padding:7px 10px}
+.board-search-toggle{position:relative;width:34px;height:34px;padding:0;display:grid;place-items:center}
+.board-search-toggle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}
+.board-search-toggle[data-filtered="true"]::after{content:"";position:absolute;right:4px;top:4px;width:7px;height:7px;background:#8357d0;border-radius:50%}
+#root .board-search{position:absolute;z-index:3;right:10px;top:50px;margin:0;width:min(320px,calc(100% - 20px));padding:10px;gap:6px;background:#faf8ff;border:1px solid #e5dfee;border-radius:15px;box-shadow:0 8px 26px #31244622}
+.board-search[hidden]{display:none}
+.board-search input{flex-basis:100%}
+.studio{position:relative;flex:1;min-height:0;isolation:isolate}
+.studio-palette,.studio-toolbar,.studio>.zoom-controls{position:absolute;z-index:1;padding:6px;background:#faf8ff;border:1px solid #e5dfee;border-radius:12px;box-shadow:0 3px 14px #31244620}
+.studio-palette{left:10px;top:50%;transform:translateY(-50%)}
+.studio-palette .paper-palette{flex-direction:column}
+.studio-toolbar{left:10px;bottom:10px}
+.studio>.zoom-controls{right:10px;bottom:10px;flex-wrap:nowrap}
+.board-overdue{position:absolute;z-index:1;top:54px;left:10px;margin:0}
+@media(max-width:480px){
+  .board-header{padding-inline:8px}
+  .board-header .logo{font-size:0}
+  .board-header .mark{margin:0}
+  .studio-toolbar label{font-size:0}
+}
+@media(max-height:350px){
+  .studio-palette{top:10px;transform:none}
+  .studio-palette .paper-palette{flex-direction:row}
+  .board-overdue{top:104px}
+}
 </style><body><main id="root"></main><script src="pingboard.js"></script></body></html>
