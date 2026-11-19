@@ -2,12 +2,14 @@ name: Desktop release
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
 concurrency:
-  group: desktop-release
+  group: desktop-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -19,17 +21,34 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Check release version
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs'
+          const read = path => readFileSync(path, 'utf8')
+          const version = JSON.parse(read('src-tauri/tauri.conf.json')).version
+          const versions = [
+            JSON.parse(read('package.json')).version,
+            JSON.parse(read('package-lock.json')).packages[''].version,
+            read('src-tauri/Cargo.toml').match(/^version = "([^"]+)"/m)?.[1],
+          ]
+          if (!versions.every(value => value === version)) {
+            throw new Error('Desktop and npm versions must match')
+          }
+          JS
       - run: npm ci
       - run: npm test
       - run: cargo install tauri-cli --version '^2' --locked
       - run: npm run build
       - name: Verify installer
         run: |
+          shopt -s nullglob
           images=(src-tauri/target/release/bundle/dmg/*.dmg)
           test "${#images[@]}" = 1
           hdiutil verify "${images[0]}"
           mkdir installers
-          cp "${images[0]}" installers/
+          version="$(jq -er .version src-tauri/tauri.conf.json)"
+          cp "${images[0]}" "installers/Pingboard-${version}-macOS-Apple-Silicon.dmg"
           (cd installers && shasum -a 256 *.dmg > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
@@ -52,6 +71,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          (cd installers && sha256sum --check SHA256SUMS.txt)
           tag="v$(jq -er .version src-tauri/tauri.conf.json)"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists"
