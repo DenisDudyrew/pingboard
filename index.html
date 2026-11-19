@@ -66,4 +66,31 @@ dialog h2{font-size:26px;letter-spacing:-.055em}
 .note-details{margin:10px 0 16px}
 .note-details summary{cursor:pointer;border-radius:12px;background:#ece6f9;padding:10px 12px;font-weight:650;font-size:14px}
 dialog button.primary{background:#d9ff57;color:#211d2d;border-color:transparent}
+
+.destroy-button{color:#a23754}
+.sticker-ghost{position:fixed;z-index:1000;pointer-events:none;overflow:hidden;padding:20px 14px;border-radius:8px;color:#211d2d;font-weight:750;overflow-wrap:anywhere;box-shadow:0 10px 25px #2b183544;animation-duration:.66s;animation-fill-mode:both}
+.effect-burn{animation-name:sticker-burn}
+.effect-impact{animation-name:sticker-impact}
+.effect-shock{animation-name:sticker-shock}
+.effect-wind{animation-name:sticker-wind}
+.effect-slice{animation-name:sticker-slice;background-color:transparent!important;box-shadow:none;color:transparent}
+.effect-pixels{animation-name:sticker-pixels}
+.effect-fold{animation-name:sticker-fold}
+.effect-burn::after,.effect-impact::after,.effect-shock::after{content:"";position:absolute;inset:0}
+.effect-burn::after{background:linear-gradient(transparent 40%,#ffbd36 82%,#ff5050);animation:ember .66s both}
+.effect-impact::after{background:radial-gradient(circle at 21% 40%,#292039 0 5px,transparent 6px),radial-gradient(circle at 67% 25%,#292039 0 4px,transparent 5px),radial-gradient(circle at 59% 71%,#292039 0 6px,transparent 7px);animation:ember .25s both}
+.effect-shock::after{background:#9ae9ff88;animation:ember .2s alternate 3}
+.effect-slice::before,.effect-slice::after{content:attr(data-title);position:absolute;inset:0;padding:inherit;background:var(--slice-paper,#fbf08b);color:#211d2d;animation-duration:.66s;animation-fill-mode:both}
+.effect-slice::before{clip-path:polygon(0 0,100% 0,0 100%);animation-name:slice-top}
+.effect-slice::after{clip-path:polygon(100% 0,100% 100%,0 100%);animation-name:slice-bottom}
+@keyframes ember{from{opacity:0}to{opacity:1}}
+@keyframes sticker-burn{30%{filter:saturate(1.7)}to{clip-path:inset(0 0 100%);opacity:0;filter:brightness(.45);transform:translateY(-16px) scale(.9)}}
+@keyframes sticker-impact{18%,43%{transform:translate(6px,3px) rotate(4deg)}28%{transform:translate(-5px,-2px) rotate(-3deg)}to{opacity:0;transform:translateY(38px) rotate(12deg) scale(.85)}}
+@keyframes sticker-shock{12%,36%,58%{transform:translateX(5px) skewX(3deg)}24%,47%{transform:translateX(-5px) skewX(-3deg)}to{opacity:0;transform:scale(.88);filter:grayscale(1)}}
+@keyframes sticker-wind{18%{transform:translateX(-9px) rotate(-7deg)}to{opacity:0;transform:translate(220px,-95px) rotate(42deg) scale(.6)}}
+@keyframes sticker-slice{0%,62%{opacity:1}to{opacity:0}}
+@keyframes slice-top{25%{transform:translate(0)}to{transform:translate(-24px,-26px) rotate(-13deg)}}
+@keyframes slice-bottom{25%{transform:translate(0)}to{transform:translate(31px,31px) rotate(14deg)}}
+@keyframes sticker-pixels{35%{clip-path:polygon(0 0,80% 0,80% 20%,100% 20%,100% 80%,60% 80%,60% 100%,20% 100%,20% 80%,0 80%)}70%{clip-path:inset(25% 25%);filter:hue-rotate(70deg)}to{clip-path:inset(49%);opacity:0}}
+@keyframes sticker-fold{40%{transform:perspective(480px) rotateX(-62deg) scale(.94)}to{opacity:0;transform:perspective(480px) rotateX(-150deg) scale(.35)}}
 </style><body><main id="root"></main><script src="pingboard.js"></script></body></html>

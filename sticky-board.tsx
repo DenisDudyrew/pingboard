@@ -104,7 +104,7 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
           const moving=preview?.id===note.id
           const point=moving?preview.point:note.position??notePosition(index)
           const color=paperColors.indexOf(note.paper as typeof paperColors[number])
-          return <button key={note.id} type="button"
+          return <button key={note.id} data-sticker-id={note.id} type="button"
             className={`sticky paper-${color<0?index%paperColors.length:color}${moving?' moving':''}${note.stage===2?' completed':''}`}
             style={{left:point.x,top:point.y}}
             onPointerDown={event=>start(event,point,note.id)}

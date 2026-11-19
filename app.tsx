@@ -1,3 +1,4 @@
+import {destroySticker} from './sticker-effects'
 import {StickyBoard, PaperPalette, paperDragType, notePosition, paperColors, surfaces, type Point} from './sticky-board'
 import {boardColumns} from './board-view'
 import {reminderChanges} from './reminders'
@@ -72,6 +73,16 @@ function App(){
     try{due.forEach(t=>new Notification('Пингборд',{body:t.title}));void save(tasks.map(t=>due.includes(t)?{...t,pinged:true}:t))}
     catch{setError('Системные уведомления недоступны')}
   },[tasks,now,notify])
+  async function removeSticker(id:string){
+    if(!confirm('Уничтожить стикер?'))return
+    const card=Array.from(document.querySelectorAll<HTMLElement>('[data-sticker-id]')).find(sticker=>sticker.dataset.stickerId===id)
+    const bounds=card?.getBoundingClientRect()
+    const color=card&&getComputedStyle(card).backgroundColor
+    const title=card?.querySelector('strong')?.textContent
+    if(!await save(tasks.filter(task=>task.id!==id)))return
+    dialog.current?.close()
+    if(bounds&&color)destroySticker(bounds,color,title)
+  }
   function edit(t:Task){setDraft({...t});dialog.current?.showModal()}
   function add(stage=0,position?:Point,paper=paperColors[tasks.length%paperColors.length] as string){
     void save([...tasks,{id:crypto.randomUUID(),title:'',note:'',area:filter==='Личное'?filter:'Работа',due:'',stage,position,paper}])
@@ -82,7 +93,7 @@ function App(){
   function field<K extends keyof Task>(k:K,v:Task[K]){if(draft)setDraft({...draft,[k]:v})}
   const columns=boardColumns(tasks,today,filter,query,now)
   const overdue=(t:Task)=>!!t.due&&t.stage!==2&&Date.parse(t.due)<=now
-  function card(t:Task){return <button className={'card paper-'+paperColors.findIndex(color=>color===t.paper)} key={t.id} draggable onDragStart={e=>e.dataTransfer.setData('text/plain',t.id)} onDragEnd={()=>setOver(-1)} onDoubleClick={()=>edit(t)} onClick={e=>{if(e.detail===0)edit(t)}}><small>{t.area}</small><strong>{t.title||'Пустой стикер'}</strong><span className="tags">{Array.from(new Set((t.tags||'').split(',').map(x=>x.trim()).filter(Boolean))).map(tag=><span key={tag} style={{background:['#e7dcff','#ffddb9','#cbe9df'][tag.length%3]}}>{tag}</span>)}</span>{!!t.steps?.length&&<small>✓ {t.steps.filter(step=>step.done).length} / {t.steps.length}</small>}{t.due&&<small>{overdue(t)?'Пора · ':'◷ '}{new Date(t.due).toLocaleString('ru',{dateStyle:'short',timeStyle:'short'})}</small>}</button>}
+  function card(t:Task){return <button className={'card paper-'+paperColors.findIndex(color=>color===t.paper)} key={t.id} data-sticker-id={t.id} draggable onDragStart={e=>e.dataTransfer.setData('text/plain',t.id)} onDragEnd={()=>setOver(-1)} onDoubleClick={()=>edit(t)} onClick={e=>{if(e.detail===0)edit(t)}}><small>{t.area}</small><strong>{t.title||'Пустой стикер'}</strong><span className="tags">{Array.from(new Set((t.tags||'').split(',').map(x=>x.trim()).filter(Boolean))).map(tag=><span key={tag} style={{background:['#e7dcff','#ffddb9','#cbe9df'][tag.length%3]}}>{tag}</span>)}</span>{!!t.steps?.length&&<small>✓ {t.steps.filter(step=>step.done).length} / {t.steps.length}</small>}{t.due&&<small>{overdue(t)?'Пора · ':'◷ '}{new Date(t.due).toLocaleString('ru',{dateStyle:'short',timeStyle:'short'})}</small>}</button>}
   return <><header><b className="logo"><span className="mark" aria-hidden="true">✦</span>пингборд</b><div className="switch">{views.map(label=><button key={label} className={view===label?'active':''} aria-pressed={view===label} disabled={!ready} onClick={()=>preferences(label,filter)}>{label}</button>)}</div></header><h1>{view==='Доска'?'Моя доска':view}<span style={{color:'#9069db'}}>.</span></h1><p>{new Date(now).toLocaleDateString('ru',{weekday:'long',day:'numeric',month:'long'})} · Активных задач: {tasks.filter(t=>t.stage!==2).length}</p><nav>{['Все','Работа','Личное'].map(s=><button key={s} className={filter===s?'active':''} disabled={!ready} onClick={()=>preferences(view,s)}>{s}</button>)}<input aria-label="Поиск задач" placeholder="Поиск задач" value={query} onChange={e=>setQuery(e.target.value)}/>{view==='Канбан'&&<PaperPalette disabled={!ready} add={paper=>add(0,undefined,paper)}/>}{!native&&'Notification' in window&&Notification.permission==='default'&&<button onClick={async()=>{await Notification.requestPermission();setNotify(!notify)}}>Включить уведомления</button>}</nav><output>{error}</output>{!today&&tasks.some(overdue)&&<p><button onClick={()=>preferences('Сегодня',filter)}>Пора заняться · {tasks.filter(overdue).length} →</button></p>}
   {view==='Доска'?ready&&<StickyBoard notes={tasks} visible={new Set(columns.flat().map(task=>task.id))} surface={surface}
     customize={background=>preferences(view,filter,background)} add={(position,paper)=>add(0,position,paper)} edit={edit} move={move}/>:<div id="board">{(today?['Пора заняться','Сегодня до конца дня','Ближайшее']:stages).map((s,i)=>{
@@ -95,6 +106,6 @@ function App(){
     <input aria-label="Название шага" value={step.text} onChange={e=>field('steps',draft.steps?.map(item=>item.id===step.id?{...item,text:e.target.value}:item))}/>
     <button type="button" aria-label={'Удалить шаг '+step.text} onClick={()=>field('steps',draft.steps?.filter(item=>item.id!==step.id))}>×</button></div>)}
     <button type="button" onClick={()=>field('steps',[...(draft.steps||[]),{id:crypto.randomUUID(),text:'',done:false}])}>+ Шаг</button></fieldset>
-  <label>Сфера<select value={draft.area} onChange={e=>field('area',e.target.value)}><option>Работа</option><option>Личное</option></select></label><label>Статус<select value={draft.stage} onChange={e=>field('stage',+e.target.value)}>{stages.map((s,i)=><option value={i} key={s}>{s}</option>)}</select></label><label>Напомнить в<input type="datetime-local" value={draft.due} onChange={e=>field('due',e.target.value)}/></label></details><output>{error}</output><div className="row"><button className="primary">Сохранить</button><button type="button" onClick={()=>dialog.current?.close()}>Отмена</button>{tasks.some(t=>t.id===draft.id)&&<button type="button" onClick={async()=>{if(confirm('Удалить задачу?')&&await save(tasks.filter(t=>t.id!==draft.id)))dialog.current?.close()}}>Удалить</button>}</div></form>}</dialog></>
+  <label>Сфера<select value={draft.area} onChange={e=>field('area',e.target.value)}><option>Работа</option><option>Личное</option></select></label><label>Статус<select value={draft.stage} onChange={e=>field('stage',+e.target.value)}>{stages.map((s,i)=><option value={i} key={s}>{s}</option>)}</select></label><label>Напомнить в<input type="datetime-local" value={draft.due} onChange={e=>field('due',e.target.value)}/></label></details><output>{error}</output><div className="row"><button className="primary">Сохранить</button><button type="button" onClick={()=>dialog.current?.close()}>Отмена</button>{tasks.some(t=>t.id===draft.id)&&<button type="button" className="destroy-button" onClick={()=>void removeSticker(draft.id)}>Уничтожить</button>}</div></form>}</dialog></>
 }
 createRoot(document.getElementById('root')!).render(<App/>)

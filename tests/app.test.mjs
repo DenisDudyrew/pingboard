@@ -68,4 +68,24 @@ test('Интерфейс восстанавливает настройки и о
   reopened.window.eval(bundle)
   await until(()=>reopened.window.document.querySelector('h1')?.textContent==='Сегодня.')
   assert.equal(reopened.window.document.querySelector('nav .active').textContent,'Работа')
+  button('Канбан').click()
+  await until(()=>doc.querySelector('[data-sticker-id="a"]'))
+  doc.querySelector('dialog').showModal=()=>{}
+  doc.querySelector('dialog').close=()=>{}
+  window.confirm=()=>true
+  const sticker=doc.querySelector('[data-sticker-id="a"]')
+  sticker.getBoundingClientRect=()=>new window.DOMRect(20,20,168,168)
+  sticker.dispatchEvent(new window.MouseEvent('dblclick',{bubbles:true}))
+  await until(()=>button('Уничтожить'))
+  fail=true
+  button('Уничтожить').click()
+  await until(()=>doc.querySelector('output').textContent.includes('диск недоступен'))
+  assert.equal(doc.querySelector('.sticker-ghost'),null)
+  assert.equal(JSON.parse(tasks).length,1)
+  fail=false
+  button('Уничтожить').click()
+  await until(()=>doc.querySelector('.sticker-ghost'))
+  await until(()=>!doc.querySelector('[data-sticker-id="a"]'))
+  assert.deepEqual(JSON.parse(tasks),[])
+
 })
