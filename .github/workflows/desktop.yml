@@ -40,12 +40,18 @@ jobs:
       - run: npm test
       - run: cargo install tauri-cli --version '^2' --locked
       - run: npm run build
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
       - name: Verify installer
         run: |
           shopt -s nullglob
           images=(src-tauri/target/release/bundle/dmg/*.dmg)
           test "${#images[@]}" = 1
           hdiutil verify "${images[0]}"
+          mount_dir="$(mktemp -d)"
+          hdiutil attach -readonly -nobrowse -mountpoint "$mount_dir" "${images[0]}"
+          trap 'hdiutil detach "$mount_dir" && rmdir "$mount_dir"' EXIT
+          codesign --verify --deep --strict --verbose=2 "$mount_dir/Pingboard.app"
           mkdir installers
           version="$(jq -er .version src-tauri/tauri.conf.json)"
           cp "${images[0]}" "installers/Pingboard-${version}-macOS-Apple-Silicon.dmg"

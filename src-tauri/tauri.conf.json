@@ -1,6 +1,6 @@
 {
   "productName": "Pingboard",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "identifier": "app.pingboard.desktop",
   "build": {
     "frontendDist": "../dist",
