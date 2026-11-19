@@ -10,7 +10,7 @@ export function PaperPalette({add,disabled=false}:{add:(paper:string)=>void,disa
       onClick={()=>add(paper)}>+</button>)}
   </div>
 }
-export const surfaces = ['Сетка','Пробка','Графит'] as const
+export const surfaces = ['Сетка','Облако','Графит','Линии','Мята'] as const
 export type Point = {x:number,y:number}
 type Note = {id:string,title:string,note:string,stage:number,paper?:string,position?:Point}
 type Gesture = {pointer:number,id?:string,start:Point,origin:Point,moved:boolean}
@@ -21,7 +21,7 @@ export function notePosition(index:number):Point {
 
 export function StickyBoard<T extends Note>({notes, visible, surface, customize, add, edit, move}:{
   notes:T[], visible:Set<string>, surface:string, customize:(surface:string)=>void,
-  add:(position:Point,paper?:string)=>void, edit:(note:T)=>void, move:(id:string,position:Point)=>void
+  add:(position:Point,paper?:string)=>void, edit:(note:T,anchor:HTMLElement)=>void, move:(id:string,position:Point)=>void
 }) {
   const [camera,setCamera]=useState<Point>({x:0,y:0})
   const [zoom,setZoom]=useState(1)
@@ -109,9 +109,10 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
             style={{left:point.x,top:point.y}}
             onPointerDown={event=>start(event,point,note.id)}
             onClick={event=>{
-              if(event.detail===0)edit(note)
+              if(event.detail===0)edit(note,event.currentTarget)
             }}
-            onDoubleClick={()=>{if(suppressClick.current!==note.id)edit(note)}}
+            onDoubleClick={event=>{if(suppressClick.current!==note.id)edit(note,event.currentTarget)}}
+            onContextMenu={event=>{event.preventDefault();edit(note,event.currentTarget)}}
             onKeyDown={event=>{
               const offsets:Record<string,Point>={ArrowUp:{x:0,y:-20},ArrowDown:{x:0,y:20},ArrowLeft:{x:-20,y:0},ArrowRight:{x:20,y:0}}
               const offset=offsets[event.key]
@@ -127,6 +128,6 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
         })}
       </div>
     </div>
-    <p className="board-controls-help">Пустой фон — перемещение по доске · Двойной щелчок по стикеру — редактирование</p>
+    <p className="board-controls-help">Пустой фон — перемещение по доске · Двойной или правый щелчок — меню стикера</p>
   </div>
 }

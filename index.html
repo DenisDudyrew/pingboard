@@ -13,7 +13,7 @@ section.over{outline:3px solid #8357d0;transform:translateY(-3px)}section,.card{
 .zoom-controls output{min-width:42px;text-align:center;color:inherit;font-size:13px}
 .pinboard{height:clamp(340px,61vh,850px);position:relative;isolation:isolate;overflow:hidden;border-radius:17px;cursor:grab;touch-action:none;user-select:none;background-color:#eae7f2;background-image:radial-gradient(#8d849e77 1px,transparent 1px);background-size:22px 22px}
 .pinboard.panning,.sticky.moving{cursor:grabbing}
-.surface-1{background-color:#cba57f;background-image:radial-gradient(#9f77555e 1px,transparent 2px),radial-gradient(#f9d1a477 1px,transparent 2px);background-size:7px 11px,11px 13px}
+
 .surface-2{background-color:#343141;background-image:radial-gradient(#c5b5e05e 1px,transparent 1px)}
 .pinboard-plane{position:absolute;inset:0;transform-origin:top left;pointer-events:none}
 .board-hint{position:absolute;top:44%;left:50%;transform:translate(-50%,-50%);width:min(86%,450px);margin:0;text-align:center;font-size:16px;pointer-events:none}
@@ -47,7 +47,7 @@ nav input{flex:1;min-width:125px}
 .studio{padding:7px;border:1px solid #e6e0ee;background:white;box-shadow:0 18px 48px #31244612}
 .studio-toolbar{padding:5px 7px 9px}
 .pinboard{background-color:#ede7ff;background-image:radial-gradient(#a393bf88 1px,transparent 1px)}
-.pinboard.surface-1{background-color:#d3a887;background-image:radial-gradient(#8c604253 1px,transparent 2px),radial-gradient(#ffdcac77 1px,transparent 2px)}
+
 .pinboard.surface-2{background-color:#292537;background-image:radial-gradient(#cbbdeb65 1px,transparent 1px)}
 .board-hint{font-weight:700;font-size:18px;color:#51436b}
 .paper-palette{display:flex;align-items:center;gap:6px}
@@ -93,4 +93,15 @@ dialog button.primary{background:#d9ff57;color:#211d2d;border-color:transparent}
 @keyframes slice-bottom{25%{transform:translate(0)}to{transform:translate(31px,31px) rotate(14deg)}}
 @keyframes sticker-pixels{35%{clip-path:polygon(0 0,80% 0,80% 20%,100% 20%,100% 80%,60% 80%,60% 100%,20% 100%,20% 80%,0 80%)}70%{clip-path:inset(25% 25%);filter:hue-rotate(70deg)}to{clip-path:inset(49%);opacity:0}}
 @keyframes sticker-fold{40%{transform:perspective(480px) rotateX(-62deg) scale(.94)}to{opacity:0;transform:perspective(480px) rotateX(-150deg) scale(.35)}}
+
+.pinboard.surface-1{background:#f2f1f8}
+.pinboard.surface-3{background-color:#f8f6f0;background-image:linear-gradient(#ded8cb 1px,transparent 1px);background-size:100% 26px}
+.pinboard.surface-4{background-color:#e5f4ec;background-image:radial-gradient(#a4c8b3 1px,transparent 1px)}
+.sticker-panel{position:fixed;z-index:100;overflow:auto;background:#faf8ff;border:1px solid #ded4ee;border-radius:17px;padding:12px;box-shadow:0 10px 32px #2218333f;animation:appear .17s ease-out}
+.sticker-panel h2{margin-bottom:8px}
+.sticker-panel input,.sticker-panel textarea,.sticker-panel select{min-width:0;max-width:100%}
+.sticker-panel button{padding:8px 11px;font-size:13px}
+.sticker-panel .primary{background:#d9ff57;color:#211d2d;border-color:transparent}
+.sticker-panel .destroy-confirm p{margin:0 0 10px;font-size:14px}
+.sticker-actions{gap:6px;justify-content:space-between}
 </style><body><main id="root"></main><script src="pingboard.js"></script></body></html>

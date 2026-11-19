@@ -83,4 +83,10 @@ jobs:
             echo "Release $tag already exists"
             exit 0
           fi
-          gh release create "$tag" installers/* --target "$GITHUB_SHA" --title "Pingboard $tag" --generate-notes
+          notes=$(mktemp)
+          awk -v tag="$tag" '$0 == "## " tag {active=1; next} /^## / && active {exit} active {print}' CHANGELOG.md > "$notes"
+          if grep -q '[^[:space:]]' "$notes"; then
+            gh release create "$tag" installers/* --target "$GITHUB_SHA" --title "Pingboard $tag" --notes-file "$notes"
+          else
+            gh release create "$tag" installers/* --target "$GITHUB_SHA" --title "Pingboard $tag" --generate-notes
+          fi
