@@ -1,6 +1,6 @@
 {
   "productName": "Pingboard",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "identifier": "app.pingboard.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -13,7 +13,8 @@
       {
         "title": "Пингборд",
         "width": 1100,
-        "height": 760
+        "height": 760,
+        "dragDropEnabled": false
       }
     ],
     "security": {

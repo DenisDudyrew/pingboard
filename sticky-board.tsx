@@ -1,6 +1,15 @@
 import {useRef, useState, type PointerEvent} from 'react'
 
 export const paperColors = ['Лимон','Сирень','Мята','Персик','Голубой'] as const
+export const paperDragType='application/x-pingboard-paper'
+export function PaperPalette({add,disabled=false}:{add:(paper:string)=>void,disabled?:boolean}){
+  return <div className="paper-palette" role="group" aria-label="Палитра стикеров">
+    {paperColors.map((paper,index)=><button key={paper} disabled={disabled} type="button" draggable={!disabled}
+      className={`paper-swatch paper-${index}`} title={paper} aria-label={`Добавить стикер: ${paper}`}
+      onDragStart={event=>{event.dataTransfer.setData(paperDragType,paper);event.dataTransfer.effectAllowed='copy'}}
+      onClick={()=>add(paper)}>+</button>)}
+  </div>
+}
 export const surfaces = ['Сетка','Пробка','Графит'] as const
 export type Point = {x:number,y:number}
 type Note = {id:string,title:string,note:string,stage:number,paper?:string,position?:Point}
@@ -12,7 +21,7 @@ export function notePosition(index:number):Point {
 
 export function StickyBoard<T extends Note>({notes, visible, surface, customize, add, edit, move}:{
   notes:T[], visible:Set<string>, surface:string, customize:(surface:string)=>void,
-  add:(position:Point)=>void, edit:(note:T)=>void, move:(id:string,position:Point)=>void
+  add:(position:Point,paper?:string)=>void, edit:(note:T)=>void, move:(id:string,position:Point)=>void
 }) {
   const [camera,setCamera]=useState<Point>({x:0,y:0})
   const [zoom,setZoom]=useState(1)
@@ -59,7 +68,7 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
     <div className="studio-toolbar">
       <label>Фон доски<select value={surface} onChange={event=>customize(event.target.value)}>{surfaces.map(value=><option key={value}>{value}</option>)}</select></label>
       <div className="zoom-controls">
-        <button className="primary" onClick={()=>{
+        <PaperPalette add={paper=>{
           const width=viewport.current?.clientWidth??400
           const height=viewport.current?.clientHeight??360
           const point={x:Math.round((width/2-camera.x)/zoom-84),y:Math.round((height/2-camera.y)/zoom-84)}
@@ -68,8 +77,8 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
             point.x+=36
             point.y+=16
           }
-          add(point)
-        }}>+ Стикер</button>
+          add(point,paper)
+        }}/>
         <button aria-label="Уменьшить масштаб" disabled={zoom<=0.5} onClick={()=>setZoom(Math.max(0.5,zoom-0.1))}>−</button>
         <output aria-label="Масштаб">{Math.round(zoom*100)}%</output>
         <button aria-label="Увеличить масштаб" disabled={zoom>=1.5} onClick={()=>setZoom(Math.min(1.5,zoom+0.1))}>+</button>
@@ -80,12 +89,15 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
       style={{backgroundPosition:`${camera.x}px ${camera.y}px`}}
       onPointerDown={event=>start(event,camera)} onPointerMove={drag} onPointerUp={event=>end(event)}
       onPointerCancel={event=>end(event,true)} onLostPointerCapture={event=>end(event,true)}
-      onDoubleClick={event=>{
-        if((event.target as HTMLElement).closest('button'))return
+      onDragOver={event=>{if(event.dataTransfer.types.includes(paperDragType)){event.preventDefault();event.dataTransfer.dropEffect='copy'}}}
+      onDrop={event=>{
+        const paper=event.dataTransfer.getData(paperDragType)
+        if(!paperColors.some(color=>color===paper))return
+        event.preventDefault()
         const rect=event.currentTarget.getBoundingClientRect()
-        add({x:Math.round((event.clientX-rect.left-camera.x)/zoom-84),y:Math.round((event.clientY-rect.top-camera.y)/zoom-30)})
+        add({x:Math.round((event.clientX-rect.left-camera.x)/zoom-84),y:Math.round((event.clientY-rect.top-camera.y)/zoom-36)},paper)
       }}>
-      {!visible.size&&<p className="board-hint">{notes.length?'По этому фильтру стикеров нет':'Дважды щёлкни по доске, чтобы прикрепить первый стикер'}</p>}
+      {!visible.size&&<p className="board-hint">{notes.length?'По этому фильтру стикеров нет':'Перетащи сюда стикер из палитры'}</p>}
       <div className="pinboard-plane" style={{transform:`translate(${camera.x}px,${camera.y}px) scale(${zoom})`}}>
         {notes.map((note,index)=>{
           if(!visible.has(note.id))return null
@@ -97,9 +109,9 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
             style={{left:point.x,top:point.y}}
             onPointerDown={event=>start(event,point,note.id)}
             onClick={event=>{
-              if(event.detail&&suppressClick.current===note.id){suppressClick.current=null;return}
-              edit(note)
+              if(event.detail===0)edit(note)
             }}
+            onDoubleClick={()=>{if(suppressClick.current!==note.id)edit(note)}}
             onKeyDown={event=>{
               const offsets:Record<string,Point>={ArrowUp:{x:0,y:-20},ArrowDown:{x:0,y:20},ArrowLeft:{x:-20,y:0},ArrowRight:{x:20,y:0}}
               const offset=offsets[event.key]
@@ -108,13 +120,13 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
               move(note.id,{x:point.x+offset.x,y:point.y+offset.y})
             }}>
             <span className="pin" aria-hidden="true"/>
-            <strong>{note.title}</strong>
+            <strong>{note.title||'Пустой стикер'}</strong>
             <span className="sticky-copy">{note.note}</span>
             {note.stage===2&&<span className="sticky-check" aria-label="Выполнено">✓</span>}
           </button>
         })}
       </div>
     </div>
-    <p className="board-controls-help">Пустой фон — перемещение по доске · Двойной щелчок — новый стикер</p>
+    <p className="board-controls-help">Пустой фон — перемещение по доске · Двойной щелчок по стикеру — редактирование</p>
   </div>
 }
