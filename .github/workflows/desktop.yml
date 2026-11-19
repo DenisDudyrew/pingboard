@@ -69,7 +69,7 @@ jobs:
           path: installers
       - name: Publish new versions
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
         run: |
           (cd installers && sha256sum --check SHA256SUMS.txt)
           tag="v$(jq -er .version src-tauri/tauri.conf.json)"
