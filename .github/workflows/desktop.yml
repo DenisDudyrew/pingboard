@@ -38,6 +38,8 @@ jobs:
           JS
       - run: npm ci
       - run: npm test
+      - run: npx playwright-core install chromium
+      - run: npm run test:ui
       - run: cargo install tauri-cli --version '^2' --locked
       - run: npm run build
         env:
