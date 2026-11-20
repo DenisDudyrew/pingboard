@@ -1,4 +1,4 @@
-import {useRef, useState, type PointerEvent, type ReactNode} from 'react'
+import {useEffect, useEffectEvent, useRef, useState, type PointerEvent, type ReactNode} from 'react'
 
 export const paperColors = ['Лимон','Сирень','Мята','Персик','Голубой'] as const
 export const paperDragType='application/x-pingboard-paper'
@@ -25,6 +25,8 @@ export function defaultPinColor(id:string):PinColor{
 }
 
 export type Point = {x:number,y:number}
+type Camera = Point & {zoom:number}
+type PinchEvent = MouseEvent & {scale:number}
 type Note = {id:string,title:string,note:string,stage:number,paper?:string,pinColor?:PinColor,position?:Point}
 type Gesture = {pointer:number,id?:string,start:Point,origin:Point,moved:boolean}
 
@@ -32,20 +34,106 @@ export function notePosition(index:number):Point {
   return {x:28+(index%3)*196,y:34+Math.floor(index/3)*196}
 }
 
-export function StickyBoard<T extends Note>({notes, visible, surface, customize, add, edit, move, editingId, renderEditor, initialCamera, remember}:{
-  initialCamera:Point & {zoom:number}, remember:(state:Point & {zoom:number})=>void,
+export function StickyBoard<T extends Note>({notes, visible, surface, customize, add, edit, move, editingId, renderEditor, initialCamera, remember, scrollEnabled, located}:{
+  initialCamera:Camera, remember:(state:Camera,gesture?:boolean)=>void, scrollEnabled:boolean, located:{id:string}|null,
   notes:T[], visible:Set<string>, surface:string, customize:(surface:string)=>void,
-  add:(position:Point,paper?:string)=>void, edit:(note:T,anchor:HTMLElement)=>void, move:(id:string,position:Point)=>Promise<boolean>, editingId?:string, renderEditor:()=>ReactNode
+  add:(position:Point,paper?:string,avoidOverlap?:boolean)=>void, edit:(note:T,anchor:HTMLElement)=>void, move:(id:string,position:Point)=>Promise<boolean>, editingId?:string, renderEditor:()=>ReactNode
 }) {
-  const [camera,setCamera]=useState<Point>(initialCamera)
-  const [zoom,setZoom]=useState(initialCamera.zoom)
-  function changeZoom(value:number){setZoom(value);remember({...camera,zoom:value})}
+  const [camera,setCameraState]=useState(initialCamera)
+  const currentCamera=useRef(initialCamera)
+  function setCamera(point:Point,zoom=currentCamera.current.zoom){
+    const next={...point,zoom}
+    currentCamera.current=next
+    setCameraState(next)
+    return next
+  }
+  const {zoom}=camera
+  function changeZoom(value:number){remember(setCamera(currentCamera.current,value))}
   const [preview,setPreview]=useState<{id:string,point:Point}|null>(null)
   const [panning,setPanning]=useState(false)
   const viewport=useRef<HTMLDivElement>(null)
   const committing=useRef(false)
   const gesture=useRef<Gesture|null>(null)
+  const pinchScale=useRef<number|null>(null)
   const suppressClick=useRef<string|null>(null)
+
+  function zoomAt(element:HTMLDivElement,event:MouseEvent,factor:number){
+    const current=currentCamera.current
+    const nextZoom=Math.max(0.5,Math.min(1.5,current.zoom*factor))
+    if(nextZoom===current.zoom)return
+    const bounds=element.getBoundingClientRect()
+    const x=Number.isFinite(event.clientX)?event.clientX-bounds.left:bounds.width/2
+    const y=Number.isFinite(event.clientY)?event.clientY-bounds.top:bounds.height/2
+    const ratio=nextZoom/current.zoom
+    remember(setCamera({x:x+(current.x-x)*ratio,y:y+(current.y-y)*ratio},nextZoom),true)
+  }
+
+  const scrollBoard=useEffectEvent((event:WheelEvent,element:HTMLDivElement)=>{
+    if(!scrollEnabled||gesture.current||event.defaultPrevented||event.metaKey)return
+    if(!event.deltaX&&!event.deltaY)return
+    event.preventDefault()
+    const lineHeight=16
+    const horizontalUnit=event.deltaMode===1?lineHeight:event.deltaMode===2?element.clientWidth:1
+    const verticalUnit=event.deltaMode===1?lineHeight:event.deltaMode===2?element.clientHeight:1
+    if(event.ctrlKey){
+      if(pinchScale.current===null)zoomAt(element,event,Math.exp(-event.deltaY*verticalUnit*0.01))
+      return
+    }
+    const point={
+      x:currentCamera.current.x-event.deltaX*horizontalUnit,
+      y:currentCamera.current.y-event.deltaY*verticalUnit
+    }
+    remember(setCamera(point),true)
+  })
+  const pinchBoard=useEffectEvent((event:PinchEvent,element:HTMLDivElement)=>{
+    if(event.type==='gestureend'){
+      if(pinchScale.current!==null)event.preventDefault()
+      pinchScale.current=null
+      return
+    }
+    if(!scrollEnabled||gesture.current||event.defaultPrevented)return
+    if(event.type==='gesturestart'){
+      event.preventDefault()
+      pinchScale.current=1
+      return
+    }
+    const previous=pinchScale.current
+    if(previous===null||!Number.isFinite(event.scale)||event.scale<=0)return
+    event.preventDefault()
+    pinchScale.current=event.scale
+    zoomAt(element,event,event.scale/previous)
+  })
+  useEffect(()=>{
+    const element=viewport.current
+    if(!element)return
+    const wheel=(event:WheelEvent)=>scrollBoard(event,element)
+    const pinch=(event:Event)=>pinchBoard(event as PinchEvent,element)
+    const pinchEvents=['gesturestart','gesturechange','gestureend']
+    element.addEventListener('wheel',wheel,{passive:false})
+    for(const type of pinchEvents)element.addEventListener(type,pinch,{passive:false})
+    return ()=>{
+      element.removeEventListener('wheel',wheel)
+      for(const type of pinchEvents)element.removeEventListener(type,pinch)
+    }
+  },[])
+
+  const focusLocated=useEffectEvent((id:string)=>{
+    const element=viewport.current
+    const index=notes.findIndex(note=>note.id===id)
+    if(!element||index<0||!visible.has(id))return
+    const point=notes[index].position??notePosition(index)
+    const zoom=currentCamera.current.zoom
+    remember(setCamera({
+      x:element.clientWidth/2-(point.x+84)*zoom,
+      y:element.clientHeight/2-(point.y+84)*zoom
+    }))
+    const sticker=Array.from(element.querySelectorAll<HTMLButtonElement>('button[data-sticker-id]'))
+      .find(button=>button.dataset.stickerId===id)
+    sticker?.focus({preventScroll:true})
+  })
+  useEffect(()=>{
+    if(located)focusLocated(located.id)
+  },[located])
 
   function start(event:PointerEvent<HTMLElement>,origin:Point,id?:string){
     if(id)event.stopPropagation()
@@ -78,9 +166,8 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
     gesture.current=null
     event.stopPropagation()
     if(!current.id&&current.moved){
-      const finalCamera=cancel?camera:position(current,displacement(event,current))
-      setCamera(finalCamera)
-      remember({...finalCamera,zoom})
+      const finalCamera=cancel?currentCamera.current:position(current,displacement(event,current))
+      remember(setCamera(finalCamera))
     }
     setPanning(false)
     if(!current.id||!current.moved)return
@@ -97,7 +184,7 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
   return <div className="studio">
     <div ref={viewport} className={'pinboard surface-'+surfaces.indexOf(surface as typeof surfaces[number])+(panning?' panning':'')} aria-label="Доска со стикерами"
       style={{backgroundPosition:`${camera.x}px ${camera.y}px`}}
-      onPointerDown={event=>start(event,camera)} onPointerMove={drag} onPointerUp={event=>end(event)}
+      onPointerDown={event=>start(event,currentCamera.current)} onPointerMove={drag} onPointerUp={event=>end(event)}
       onPointerCancel={event=>end(event,true)} onLostPointerCapture={event=>end(event,true)}
       onDragOver={event=>{if(event.dataTransfer.types.includes(paperDragType)){event.preventDefault();event.dataTransfer.dropEffect='copy'}}}
       onDrop={event=>{
@@ -151,12 +238,7 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
           const width=viewport.current?.clientWidth??400
           const height=viewport.current?.clientHeight??360
           const point={x:Math.round((width/2-camera.x)/zoom-84),y:Math.round((height/2-camera.y)/zoom-84)}
-          const occupied=notes.map((note,index)=>note.position??notePosition(index))
-          while(occupied.some(other=>Math.abs(other.x-point.x)<35&&Math.abs(other.y-point.y)<35)){
-            point.x+=36
-            point.y+=16
-          }
-          add(point,paper)
+          add(point,paper,true)
         }}/>
     </div>
     <div className="studio-toolbar">
@@ -166,7 +248,7 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
         <button aria-label="Уменьшить масштаб" disabled={zoom<=0.5} onClick={()=>changeZoom(Math.max(0.5,zoom-0.1))}>−</button>
         <output aria-label="Масштаб">{Math.round(zoom*100)}%</output>
         <button aria-label="Увеличить масштаб" disabled={zoom>=1.5} onClick={()=>changeZoom(Math.min(1.5,zoom+0.1))}>+</button>
-        <button onClick={()=>{setCamera({x:0,y:0});setZoom(1);remember({x:0,y:0,zoom:1})}}>В начало</button>
+        <button onClick={()=>remember(setCamera({x:0,y:0},1))}>В начало</button>
     </div>
   </div>
 }

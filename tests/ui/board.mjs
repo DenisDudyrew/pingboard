@@ -39,4 +39,23 @@ test('Создание, поиск, перенос, Сегодня и восст
   await page.locator('section').nth(2).locator('.card').waitFor()
   await button('Сегодня').click()
   assert.equal(await card.count(),0)
+
+  await button('Доска').click()
+  await page.locator('.backup-menu summary').click()
+  const download=page.waitForEvent('download')
+  await button('Сохранить копию').click()
+  assert.match((await download).suggestedFilename(),/^Pingboard-.*\.json$/)
+  const restored={
+    version:1,
+    tasks:[{id:'restored',title:'Восстановленный стикер',note:'',due:'',area:'Работа',stage:0}],
+    settings:{view:'Доска',filter:'Все',surface:'Мята',camera:{x:24,y:36,zoom:1.2}}
+  }
+  page.once('dialog',dialog=>dialog.accept())
+  const recovery=page.waitForEvent('download')
+  await page.locator('input[type="file"]').setInputFiles({
+    name:'backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(restored))
+  })
+  await recovery
+  await page.locator('.sticky').filter({hasText:'Восстановленный стикер'}).waitFor()
+  assert.equal(await page.locator('.pinboard-plane').evaluate(el=>el.style.transform),'translate(24px, 36px) scale(1.2)')
 })
