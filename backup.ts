@@ -1,7 +1,8 @@
+import {readZones,type Zone} from './board-zones'
 import {paperColors,pinColors,surfaces,type PinColor,type Point} from './sticky-board'
 
 export type Task={id:string,title:string,note:string,due:string,area:string,stage:number,paper?:string,pinColor?:PinColor,position?:Point,pinged?:boolean,tags?:string,steps?:{id:string,text:string,done:boolean}[]}
-export type BackupSettings={view:'Доска'|'Канбан'|'Сегодня',filter:string,surface:string,camera:Point & {zoom:number}}
+export type BackupSettings={view:'Доска'|'Канбан'|'Сегодня',filter:string,surface:string,camera:Point & {zoom:number},zones?:Zone[]}
 type Backup={version:1,tasks:Task[],settings:BackupSettings}
 
 function object(value:unknown):value is Record<string,unknown>{
@@ -29,12 +30,13 @@ export function readBackup(raw:string):Backup{
   const value:unknown=JSON.parse(raw)
   if(object(value)&&value.version===1&&Array.isArray(value.tasks)&&value.tasks.every(validTask)&&
     new Set(value.tasks.map(task=>task.id)).size===value.tasks.length&&object(value.settings)){
-    const {view,filter,surface,camera}=value.settings
+    const {view,filter,surface,camera,zones}=value.settings
+    const validatedZones=readZones(zones)
     if((view==='Доска'||view==='Канбан'||view==='Сегодня')&&typeof filter==='string'&&member(filter,['Все','Работа','Личное'])&&
       typeof surface==='string'&&member(surface,surfaces)&&object(camera)&&typeof camera.zoom==='number'&&
-      camera.zoom>=0.5&&camera.zoom<=1.5){
+      camera.zoom>=0.5&&camera.zoom<=1.5&&(zones===undefined||validatedZones)){
       const zoom=camera.zoom
-      if(point(camera))return {version:1,tasks:value.tasks,settings:{view,filter,surface,camera:{...camera,zoom}}}
+      if(point(camera))return {version:1,tasks:value.tasks,settings:{view,filter,surface,camera:{...camera,zoom},...(validatedZones?{zones:validatedZones}:{})}}
     }
   }
   throw Error('Файл не похож на резервную копию Пингборда')

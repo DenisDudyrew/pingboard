@@ -1,3 +1,4 @@
+import {readZones,zoneAt,zoneColors,zoneSize,type Zone} from './board-zones'
 import {destroySticker,celebrate} from './sticker-effects'
 import {StickyBoard, PaperPalette, paperDragType, notePosition, paperColors, surfaces, pinColors, defaultPinColor, type PinColor, type Point} from './sticky-board'
 import {boardColumns} from './board-view'
@@ -15,6 +16,14 @@ const native=(window as Window & {__TAURI__?:{core:Bridge}}).__TAURI__?.core
 function App(){
   const [tasks,setTasks]=useState<Task[]>([])
   const latestTasks=useRef<Task[]>([])
+  const [zones,setZones]=useState<Zone[]>([])
+  const latestZones=useRef<Zone[]>([])
+  const [zoneDraft,setZoneDraft]=useState<Zone|null>(null)
+  const [zoneSaving,setZoneSaving]=useState(false)
+  const [leavingZones,setLeavingZones]=useState<Zone[]>([])
+  const zoneDialog=useRef<HTMLDialogElement>(null)
+  const zoneReturnFocus=useRef<HTMLElement|null>(null)
+  const zoneAnimatingTimers=useRef<ReturnType<typeof setTimeout>[]>([])
   const taskQueue=useRef(Promise.resolve())
   type Reminder=ReturnType<typeof reminderChanges>[number]
   const pendingReminders=useRef<Reminder[]>([])
@@ -95,16 +104,24 @@ function App(){
   const panelTop=anchor?Math.max(12,Math.min(anchor.top,window.innerHeight-(draft?260:145))):12
   const actionsLeft=Math.max(65,Math.min(anchor?.right??65,window.innerWidth-65))
   const actionsTop=Math.max(72,anchor?.top??72)
-  const preferencesQueue=useRef(Promise.resolve())
   const cameraSaveTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined)
   const today=view==='Сегодня', boardView=view==='Доска'
+  const currentPreferences=useRef<Pick<BackupSettings,'view'|'filter'|'surface'>>({view,filter,surface})
+  function settingsSnapshot(zones=latestZones.current):BackupSettings{
+    return {...currentPreferences.current,camera:camera.current,...(zones.length?{zones}:{})}
+  }
+  function applyZones(next:Zone[]){
+    latestZones.current=next
+    setZones(next)
+  }
   function preferences(nextView:View,area:string,background=surface){
     if(importInProgress.current)return
     clearTimeout(cameraSaveTimer.current)
     if(nextView!==view)setLocated(null)
     setView(nextView);setFilter(area);setSurface(background)
-    const data=JSON.stringify({view:nextView,today:nextView==='Сегодня',filter:area,surface:background,camera:camera.current})
-    preferencesQueue.current=preferencesQueue.current.then(async()=>{
+    currentPreferences.current={view:nextView,filter:area,surface:background}
+    taskQueue.current=taskQueue.current.then(async()=>{
+      const data=JSON.stringify({...settingsSnapshot(),today:currentPreferences.current.view==='Сегодня'})
       if(native)await native.invoke('save_settings',{data})
       else localStorage.setItem('pingboard.settings',data)
     }).catch(e=>setError('Ошибка сохранения настроек: '+e))
@@ -134,9 +151,14 @@ function App(){
       const options=JSON.parse(raw||'{}')
       const saved=options?.camera
       if(saved&&Number.isFinite(saved.x)&&Number.isFinite(saved.y)&&saved.zoom>=0.5&&saved.zoom<=1.5&&Number.isFinite(saved.zoom))camera.current=saved
-      setView(views.includes(options?.view)?options.view:options?.today===true?'Сегодня':'Доска')
-      setSurface(options?.surface==='Пробка'?'Облако':surfaces.includes(options?.surface)?options.surface:surfaces[0])
-      setFilter(['Работа','Личное'].includes(options?.filter)?options.filter:'Все')
+      const loadedView=views.includes(options?.view)?options.view:options?.today===true?'Сегодня':'Доска'
+      const loadedSurface=options?.surface==='Пробка'?'Облако':surfaces.includes(options?.surface)?options.surface:surfaces[0]
+      const loadedFilter=['Работа','Личное'].includes(options?.filter)?options.filter:'Все'
+      currentPreferences.current={view:loadedView,filter:loadedFilter,surface:loadedSurface}
+      setView(loadedView)
+      setSurface(loadedSurface)
+      setFilter(loadedFilter)
+      applyZones(readZones(options?.zones)??[])
     }
     async function initialize(){
       if(native)void flushReminders()
@@ -172,7 +194,7 @@ function App(){
     }catch{setReminderError(true)}
     finally{sendingReminders.current=false}
   }
-  function save(update:(current:Task[])=>Task[],settings?:BackupSettings,beforeImport?:(current:Task[])=>Promise<void>){
+  function save(update:(current:Task[])=>Task[],settings?:BackupSettings|(()=>BackupSettings),beforeImport?:(current:Task[])=>Promise<void>){
     if(!ready||(importInProgress.current&&!settings))return Promise.resolve(false)
     const operation=taskQueue.current.then(async()=>{
       const previous=latestTasks.current
@@ -181,28 +203,34 @@ function App(){
         if(next===previous&&!settings)return false
         if(beforeImport){
           clearTimeout(cameraSaveTimer.current)
-          await preferencesQueue.current
           await beforeImport(previous)
         }
+        const nextSettings=typeof settings==='function'?settings():settings
         const data=JSON.stringify(next)
         if(native){
           const reminders=reminderChanges(previous,next)
-          await native.invoke('save_tasks',{data,reminders,settings:settings?JSON.stringify(settings):null})
+          await native.invoke('save_tasks',{data,reminders,settings:nextSettings?JSON.stringify(nextSettings):null})
           const replaced=new Set(reminders.map(item=>item.id))
           pendingReminders.current=[...pendingReminders.current.filter(item=>!replaced.has(item.id)),...reminders]
           void flushReminders()
         }else{
           const settingsKey='pingboard.settings'
-          const previousSettings=settings?localStorage.getItem(settingsKey):null
-          if(settings)localStorage.setItem(settingsKey,JSON.stringify(settings))
+          const previousSettings=nextSettings?localStorage.getItem(settingsKey):null
+          if(nextSettings)localStorage.setItem(settingsKey,JSON.stringify(nextSettings))
           try{localStorage.setItem(key,data)}
           catch(e){
-            if(settings){
+            if(nextSettings){
               if(previousSettings===null)localStorage.removeItem(settingsKey)
               else localStorage.setItem(settingsKey,previousSettings)
             }
             throw e
           }
+        }
+        if(nextSettings)applyZones(nextSettings.zones??[])
+        if(beforeImport&&nextSettings){
+          const {view,filter,surface,camera:point}=nextSettings
+          currentPreferences.current={view,filter,surface}
+          camera.current=point
         }
         latestTasks.current=next
         setTasks(next)
@@ -265,7 +293,7 @@ function App(){
     setDraft(null);setDetailsOpen(false);setMenu({task,anchor,bounds:anchor.getBoundingClientRect()})
   }
   async function exportBackup(current:Task[],beforeImport=false){
-    const data=JSON.stringify({version:1,tasks:current,settings:{view,filter,surface,camera:camera.current}},null,2)
+    const data=JSON.stringify({version:1,tasks:current,settings:settingsSnapshot()},null,2)
     if(native)return native.invoke('write_backup',{data})
     if(beforeImport)localStorage.setItem('pingboard.pre-import-backup',data)
     const url=URL.createObjectURL(new Blob([data],{type:'application/json'}))
@@ -307,7 +335,7 @@ function App(){
   const importSelected=useEffectEvent((input:HTMLInputElement)=>{
     const file=input.files?.[0]
     input.value=''
-    if(file&&!importInProgress.current&&!isEditing)void handleImport(file)
+    if(file&&!importInProgress.current&&!isEditing&&!zoneDraft)void handleImport(file)
   })
   useEffect(()=>{
     const input=importFile.current
@@ -334,15 +362,76 @@ function App(){
     })
       .then(saved=>{if(saved&&locate){setQuery('');setSearchOpen(false);setLocated({id})}})
   }
-  const createWithShortcut=useEffectEvent((event:KeyboardEvent)=>{
-    if(!ready||!boardView||isEditing||importing||event.defaultPrevented||event.repeat||event.isComposing)return
-    if(!(event.metaKey||event.ctrlKey)||!event.shiftKey||event.altKey||event.code!=='KeyN')return
-    event.preventDefault()
+  function openZone(zone:Zone){
+    if(isEditing||importInProgress.current)return
     closeMenu()
-    add(0,undefined,undefined,true)
+    zoneReturnFocus.current=document.activeElement instanceof HTMLElement?document.activeElement:null
+    setZoneDraft({...zone})
+  }
+  function createZone(position:Point){
+    openZone({...position,...zoneSize,id:crypto.randomUUID(),title:'Новая область',description:'',color:zoneColors[0]})
+  }
+  function closeZone(){
+    setZoneDraft(null)
+    zoneDialog.current?.close()
+    zoneReturnFocus.current?.focus({preventScroll:true})
+  }
+  useEffect(()=>{
+    const dialog=zoneDialog.current
+    if(!zoneDraft||!dialog||dialog.open)return
+    dialog.showModal()
+    dialog.querySelector('input')?.select()
+  },[zoneDraft])
+  useEffect(()=>()=>{for(const timer of zoneAnimatingTimers.current)clearTimeout(timer)},[])
+  function updateZones(update:(current:Zone[])=>Zone[]){
+    return save(current=>current,()=>settingsSnapshot(update(latestZones.current)))
+  }
+  function moveZone(id:string,position:Point){
+    let nextZones:Zone[]
+    return save(current=>{
+      const previous=latestZones.current
+      const zone=previous.find(item=>item.id===id)
+      nextZones=previous
+      if(!zone)return current
+      nextZones=previous.map(item=>item.id===id?{...zone,...position}:item)
+      const dx=position.x-zone.x
+      const dy=position.y-zone.y
+      return current.map((task,index)=>{
+        const point=task.position??notePosition(index)
+        return zoneAt(previous,point)?.id===id?{...task,position:{x:point.x+dx,y:point.y+dy}}:task
+      })
+    },()=>settingsSnapshot(nextZones))
+  }
+  async function deleteZone(zone:Zone){
+    if(zoneSaving)return
+    setZoneSaving(true)
+    const saved=await updateZones(current=>current.filter(item=>item.id!==zone.id))
+    setZoneSaving(false)
+    if(!saved)return
+    closeZone()
+    if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)return
+    setLeavingZones(current=>[...current,zone])
+    const timer=setTimeout(()=>{
+      setLeavingZones(current=>current.filter(item=>item.id!==zone.id))
+      zoneAnimatingTimers.current=zoneAnimatingTimers.current.filter(item=>item!==timer)
+    },240)
+    zoneAnimatingTimers.current.push(timer)
+  }
+  const useShortcut=useEffectEvent((event:KeyboardEvent)=>{
+    if(!ready||!boardView||isEditing||zoneDraft||importing||event.defaultPrevented||event.repeat||event.isComposing)return
+    if(!(event.metaKey||event.ctrlKey)||event.altKey)return
+    if(event.shiftKey&&event.code==='KeyN'){
+      event.preventDefault()
+      closeMenu()
+      add(0,undefined,undefined,true)
+    }else if(!event.shiftKey&&event.code==='KeyF'){
+      event.preventDefault()
+      setSearchOpen(true)
+      document.querySelector<HTMLInputElement>('#board-search input')?.focus()
+    }
   })
   useEffect(()=>{
-    const shortcut=(event:KeyboardEvent)=>createWithShortcut(event)
+    const shortcut=(event:KeyboardEvent)=>useShortcut(event)
     document.addEventListener('keydown',shortcut)
     return ()=>document.removeEventListener('keydown',shortcut)
   },[])
@@ -403,7 +492,7 @@ function App(){
       <summary>Данные</summary>
       <div className="backup-actions">
         <button disabled={!ready||importing} onClick={()=>void handleExport()}>Сохранить копию</button>
-        <button disabled={!ready||importing||isEditing} onClick={()=>importFile.current?.click()}>Восстановить из копии</button>
+        <button disabled={!ready||importing||isEditing||!!zoneDraft} onClick={()=>importFile.current?.click()}>Восстановить из копии</button>
         <input ref={importFile} type="file" accept=".json,application/json" hidden/>
       </div>
     </details>
@@ -439,7 +528,7 @@ function App(){
   </nav><output>{error}</output>
   {reminderError&&<div className="app-notice" role="status">Не удалось настроить напоминания. <button onClick={()=>void flushReminders()}>Повторить</button></div>}
   {backupStatus&&<div className="app-notice" role="status">{backupStatus} <button aria-label="Закрыть сообщение" onClick={()=>setBackupStatus('')}>×</button></div>}{!today&&tasks.some(overdue)&&<p className={boardView?'board-overdue':undefined}><button onClick={()=>{if(discardDraft()){closeMenu();preferences('Сегодня',filter)}}}>Пора заняться · {tasks.filter(overdue).length} →</button></p>}
-  {view==='Доска'?ready&&<StickyBoard key={cameraVersion} located={located} initialCamera={camera.current} remember={rememberCamera} scrollEnabled={!isEditing&&!importing} notes={tasks} visible={visible} surface={surface}
+  {view==='Доска'?ready&&<StickyBoard key={cameraVersion} located={located} zones={zones} leavingZones={leavingZones} createZone={createZone} editZone={openZone} moveZone={moveZone} initialCamera={camera.current} remember={rememberCamera} scrollEnabled={!isEditing&&!zoneDraft&&!importing} notes={tasks} visible={visible} surface={surface}
     customize={background=>preferences(view,filter,background)} add={(position,paper,avoidOverlap)=>add(0,position,paper,false,avoidOverlap)} edit={openStickerMenu} move={move} editingId={detailsOpen?undefined:draft?.id} renderEditor={renderEditor}/>:<div id="board">{(today?['Пора заняться','Сегодня до конца дня','Ближайшее']:stages).map((s,i)=>{
     const group=columns[i]
     return <section key={s} className={over===i?'over':''} onDragOver={e=>{if(!today){e.preventDefault();setOver(i)}}} onDrop={e=>{e.preventDefault();setOver(-1);if(today)return;const paper=e.dataTransfer.getData(paperDragType);if(paperColors.some(color=>color===paper)){add(i,undefined,paper);return}const id=e.dataTransfer.getData('text/plain');void save(current=>current.some(t=>t.id===id&&t.stage!==i)?current.map(t=>t.id===id?{...t,stage:i}:t):current)}}><h2>{s}<small>{group.length}</small></h2>{group.map(card)}{today&&!group.length&&<small>Задач нет</small>}{!today&&<button className="add" disabled={!ready} onClick={()=>add(i)}>+ Стикер</button>}</section>
@@ -456,6 +545,45 @@ function App(){
   </div>}{menu&&draft&&(!boardView||detailsOpen)&&<div ref={panel} className="sticker-panel" role="dialog" aria-label="Меню стикера"
     style={{left:panelLeft,top:panelTop,width:panelWidth,maxHeight:Math.max(100,window.innerHeight-panelTop-12)}}>
     {renderEditor()}</div>}
+    <dialog ref={zoneDialog} className="zone-dialog" aria-labelledby="zone-dialog-title"
+      onCancel={event=>{event.preventDefault();if(!zoneSaving)closeZone()}}>
+      {zoneDraft&&<form onSubmit={async event=>{
+        event.preventDefault()
+        const title=zoneDraft.title.trim()
+        if(!title)return
+        const item={...zoneDraft,title}
+        if(zoneSaving||!readZones([item]))return
+        setZoneSaving(true)
+        const saved=await updateZones(current=>current.some(zone=>zone.id===item.id)?
+          current.map(zone=>zone.id===item.id?item:zone):[...current,item])
+        setZoneSaving(false)
+        if(saved)closeZone()
+      }}>
+        <h2 id="zone-dialog-title">Настройки области</h2>
+        <fieldset disabled={zoneSaving}>
+        <label>Название области<input required maxLength={80} value={zoneDraft.title}
+          onChange={event=>setZoneDraft({...zoneDraft,title:event.target.value})}/></label>
+        <label>Описание области<textarea rows={3} maxLength={500} value={zoneDraft.description}
+          onChange={event=>setZoneDraft({...zoneDraft,description:event.target.value})}/></label>
+        <div className="zone-dimensions">
+          <label>Ширина<input required type="number" min={220} max={2400} value={zoneDraft.width||''}
+            onChange={event=>setZoneDraft({...zoneDraft,width:Number(event.target.value)})}/></label>
+          <label>Высота<input required type="number" min={180} max={2400} value={zoneDraft.height||''}
+            onChange={event=>setZoneDraft({...zoneDraft,height:Number(event.target.value)})}/></label>
+        </div>
+        <label>Цвет области<select value={zoneDraft.color}
+          onChange={event=>setZoneDraft({...zoneDraft,color:event.target.value as Zone['color']})}>
+          {zoneColors.map(color=><option key={color}>{color}</option>)}
+        </select></label>
+        <output>{error}</output>
+        <div className="row">
+          {zones.some(zone=>zone.id===zoneDraft.id)&&<button type="button" onClick={()=>void deleteZone(zoneDraft)}>Удалить область</button>}
+          <button type="button" onClick={closeZone}>Отмена</button>
+          <button className="primary" type="submit">Сохранить область</button>
+        </div>
+        </fieldset>
+      </form>}
+    </dialog>
     {lastDeleted&&<div className="undo-toast" role="status">Удалено · {lastDeleted.task.title||'Пустой стикер'} <button onClick={()=>void restore()}>Вернуть</button></div>}</>
 }
 createRoot(document.getElementById('root')!).render(<App/>)
