@@ -147,6 +147,17 @@ dialog button.primary{background:#d9ff57;color:#211d2d;border-color:transparent}
 .board-zone{pointer-events:auto;cursor:grab;border:2px solid var(--zone-color);background:color-mix(in srgb,var(--zone-color) 27%,var(--zone-background,#faf7ff))}
 .surface-2{--zone-background:#38323f}
 .board-zone-header{padding:10px;pointer-events:none;z-index:2}
+.zone-resize{position:absolute;pointer-events:auto;z-index:1;--hit:calc(12px * var(--zone-ui-scale));--half-hit:calc(var(--hit) / -2)}
+.zone-resize:is([data-edge="n"],[data-edge="s"]){left:var(--hit);right:var(--hit);height:var(--hit);cursor:ns-resize}
+.zone-resize:is([data-edge="e"],[data-edge="w"]){top:var(--hit);bottom:var(--hit);width:var(--hit);cursor:ew-resize}
+.zone-resize:is([data-edge="ne"],[data-edge="se"],[data-edge="sw"],[data-edge="nw"]){width:calc(var(--hit) * 1.5);height:calc(var(--hit) * 1.5)}
+.zone-resize[data-edge^="n"]{top:var(--half-hit)}
+.zone-resize[data-edge^="s"]{bottom:var(--half-hit)}
+.zone-resize[data-edge$="e"]{right:var(--half-hit)}
+.zone-resize[data-edge$="w"]{left:var(--half-hit)}
+.zone-resize:is([data-edge="nw"],[data-edge="se"]){cursor:nwse-resize}
+.zone-resize:is([data-edge="ne"],[data-edge="sw"]){cursor:nesw-resize}
+.zone-resize:hover{background:color-mix(in srgb,var(--zone-color) 45%,transparent);border-radius:4px}
 .board-zone-title{width:calc(100% / var(--zone-ui-scale));display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 10px;transform:scale(var(--zone-ui-scale));transform-origin:top left;pointer-events:auto;cursor:grab;color:#211d2d;background:color-mix(in srgb,var(--zone-color) 28%,#fff);border:1px solid var(--zone-color);border-radius:12px;font-weight:750;text-align:left}
 .board-zone-title span:first-child{min-width:0;overflow:hidden;overflow-wrap:anywhere;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .board-zone-header p{position:absolute;top:calc(12px + 51px * var(--zone-ui-scale));left:12px;right:12px;margin:0;color:#3a3444;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;font-size:14px}
