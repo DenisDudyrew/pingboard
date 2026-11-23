@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {readFile} from 'node:fs/promises'
 import {chromium} from 'playwright-core'
 
 test('Создание, поиск, перенос, Сегодня и восстановление доски', async t=>{
@@ -39,4 +40,82 @@ test('Создание, поиск, перенос, Сегодня и восст
   await page.locator('section').nth(2).locator('.card').waitFor()
   await button('Сегодня').click()
   assert.equal(await card.count(),0)
+
+  await button('Доска').click()
+  await page.locator('.backup-menu summary').click()
+  const download=page.waitForEvent('download')
+  await button('Сохранить копию').click()
+  assert.match((await download).suggestedFilename(),/^Pingboard-.*\.json$/)
+  const restored={
+    version:1,
+    tasks:[{id:'restored',title:'Восстановленный стикер',note:'',due:'',area:'Работа',stage:0}],
+    settings:{view:'Доска',filter:'Все',surface:'Мята',camera:{x:24,y:36,zoom:1.2}}
+  }
+  page.once('dialog',dialog=>dialog.accept())
+  const recovery=page.waitForEvent('download')
+  await page.locator('input[type="file"]').setInputFiles({
+    name:'backup.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(restored))
+  })
+  await recovery
+  await page.locator('.sticky').filter({hasText:'Восстановленный стикер'}).waitFor()
+  assert.equal(await page.locator('.pinboard-plane').evaluate(el=>el.style.transform),'translate(24px, 36px) scale(1.2)')
+
+  const board=page.locator('.pinboard')
+  await button('Добавить область').dragTo(board,{targetPosition:{x:180,y:130}})
+  const zoneDialog=page.getByRole('dialog',{name:'Настройки области'})
+  await zoneDialog.getByLabel('Название области').fill('Рабочая зона')
+  await zoneDialog.getByLabel('Описание области').fill('Задачи на неделю')
+  await zoneDialog.getByLabel('Цвет области').selectOption('Мята')
+  await button('Сохранить область').click()
+  const title=button('Настроить область: Рабочая зона')
+  await title.waitFor()
+  assert.equal(await page.getByText('Задачи на неделю').count(),1)
+  const zone=page.locator('.board-zone[data-zone-id]')
+  const sticker=page.locator('.sticky')
+  async function drag(locator,from,to){
+    const bounds=await locator.boundingBox()
+    assert.ok(bounds)
+    await page.mouse.move(bounds.x+from.x,bounds.y+from.y)
+    await page.mouse.down()
+    await page.mouse.move(to.x,to.y,{steps:8})
+    await page.mouse.up()
+  }
+  const zoneBounds=await zone.boundingBox()
+  assert.ok(zoneBounds)
+  await drag(sticker,{x:90,y:90},{x:zoneBounds.x+180,y:zoneBounds.y+185})
+  const position=()=>page.evaluate(()=>JSON.parse(localStorage.getItem('pingboard.tasks'))[0].position)
+  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('pingboard.tasks'))[0].position)
+  const before=await position()
+  await drag(zone,{x:35,y:120},{x:zoneBounds.x+95,y:zoneBounds.y+156})
+  await page.waitForFunction(x=>JSON.parse(localStorage.getItem('pingboard.tasks'))[0].position.x===x,before.x+50)
+  assert.deepEqual(await position(),{x:before.x+50,y:before.y+30})
+  await page.reload()
+  await title.waitFor()
+  assert.deepEqual(await position(),{x:before.x+50,y:before.y+30})
+
+  await page.locator('.backup-menu summary').click()
+  const zoneCopyEvent=page.waitForEvent('download')
+  await button('Сохранить копию').click()
+  const zoneCopy=JSON.parse(await readFile(await (await zoneCopyEvent).path(),'utf8'))
+  assert.deepEqual(
+    zoneCopy.settings.zones.map(({title,description,color})=>({title,description,color})),
+    [{title:'Рабочая зона',description:'Задачи на неделю',color:'Мята'}]
+  )
+  await page.locator('.backup-menu summary').click()
+  await page.keyboard.press('Control+-')
+  assert.equal(await page.locator('[aria-label="Масштаб"]').textContent(),'110%')
+  await page.keyboard.press('Control+0')
+  assert.equal(await page.locator('[aria-label="Масштаб"]').textContent(),'100%')
+  await page.keyboard.press('Control+Shift+A')
+  await zoneDialog.waitFor()
+  await page.keyboard.press('Escape')
+  await zoneDialog.waitFor({state:'hidden'})
+  await page.keyboard.press('Control+f')
+  await page.getByLabel('Поиск задач').waitFor()
+  await page.keyboard.press('Escape')
+  await title.click()
+  await button('Удалить область').click()
+  await zone.waitFor({state:'detached'})
+  assert.equal(await sticker.count(),1)
+  assert.deepEqual(await position(),{x:before.x+50,y:before.y+30})
 })
