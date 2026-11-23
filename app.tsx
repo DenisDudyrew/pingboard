@@ -9,6 +9,7 @@ import {createRoot} from 'react-dom/client'
 
 const views=['Доска','Канбан','Сегодня'] as const
 type View=typeof views[number]
+const defaultTitle='Поменяй меня'
 const stages=['В планах','В работе','Готово']
 const key='pingboard.tasks'
 type Bridge={invoke:(name:string,args?:Record<string,unknown>)=>Promise<string>}
@@ -21,6 +22,8 @@ function App(){
   const [zoneDraft,setZoneDraft]=useState<Zone|null>(null)
   const [zoneSaving,setZoneSaving]=useState(false)
   const [leavingZones,setLeavingZones]=useState<Zone[]>([])
+  const [zoneActions,setZoneActions]=useState<{zone:Zone,anchor:HTMLElement,left:number,top:number}|null>(null)
+  const zoneActionPanel=useRef<HTMLDivElement>(null)
   const zoneDialog=useRef<HTMLDialogElement>(null)
   const zoneReturnFocus=useRef<HTMLElement|null>(null)
   const zoneAnimatingTimers=useRef<ReturnType<typeof setTimeout>[]>([])
@@ -60,7 +63,7 @@ function App(){
   const dirty=!!draft&&JSON.stringify(draft)!==JSON.stringify(menu?.task)
   function closeMenu(){
     editorRevision.current++
-    setMenu(null);setDraft(null);setDetailsOpen(false)
+    setMenu(null);setDraft(null);setDetailsOpen(false);setZoneActions(null)
   }
   function discardDraft(){
     return !dirty||window.confirm('Закрыть стикер и отменить несохранённые изменения? Чтобы сохранить черновик, вернитесь к редактору и нажмите галочку.')
@@ -128,6 +131,7 @@ function App(){
   }
   function rememberCamera(state:{x:number,y:number,zoom:number},fromGesture=false){
     camera.current=state
+    if(zoneActions)setZoneActions(null)
     if(!fromGesture){
       preferences(view,filter)
       return
@@ -358,18 +362,51 @@ function App(){
         }
         point={x,y}
       }
-      return [...current,{id,title:'',note:'',area,due:'',stage,position:point,paper:paper??paperColors[current.length%paperColors.length]}]
+      return [...current,{id,title:defaultTitle,note:'',area,due:'',stage,position:point,paper:paper??paperColors[current.length%paperColors.length]}]
     })
       .then(saved=>{if(saved&&locate){setQuery('');setSearchOpen(false);setLocated({id})}})
   }
-  function openZone(zone:Zone){
+  function showZoneActions(zone:Zone,anchor:HTMLElement){
     if(isEditing||importInProgress.current)return
     closeMenu()
-    zoneReturnFocus.current=document.activeElement instanceof HTMLElement?document.activeElement:null
+    const bounds=anchor.getBoundingClientRect()
+    setZoneActions({zone,anchor,left:Math.max(65,Math.min(bounds.right,window.innerWidth-65)),
+      top:Math.max(72,Math.min(bounds.top,window.innerHeight-16))})
+  }
+  useEffect(()=>{
+    if(!zoneActions)return
+    const dismiss=()=>setZoneActions(null)
+    function outside(event:PointerEvent){
+      if(event.target instanceof Node&&!zoneActionPanel.current?.contains(event.target))dismiss()
+    }
+    function escape(event:KeyboardEvent){
+      if(event.key!=='Escape')return
+      dismiss()
+      zoneActions?.anchor.focus({preventScroll:true})
+    }
+    document.addEventListener('pointerdown',outside,true)
+    document.addEventListener('keydown',escape)
+    window.addEventListener('resize',dismiss)
+    return ()=>{
+      document.removeEventListener('pointerdown',outside,true)
+      document.removeEventListener('keydown',escape)
+      window.removeEventListener('resize',dismiss)
+    }
+  },[zoneActions])
+  function openZone(zone:Zone,anchor:HTMLElement){
+    if(isEditing||importInProgress.current)return
+    closeMenu()
+    zoneReturnFocus.current=anchor
     setZoneDraft({...zone})
   }
   function createZone(position:Point){
-    openZone({...position,...zoneSize,id:crypto.randomUUID(),title:'Новая область',description:'',color:zoneColors[0]})
+    if(isEditing||importInProgress.current)return
+    const zone={...position,...zoneSize,id:crypto.randomUUID(),title:defaultTitle,description:'',color:zoneColors[0]}
+    closeMenu()
+    void updateZones(current=>[...current,zone])
+  }
+  function resizeZone(id:string,bounds:Pick<Zone,'x'|'y'|'width'|'height'>){
+    return updateZones(current=>current.map(zone=>zone.id===id?{...zone,...bounds}:zone))
   }
   function closeZone(){
     setZoneDraft(null)
@@ -408,7 +445,7 @@ function App(){
     const saved=await updateZones(current=>current.filter(item=>item.id!==zone.id))
     setZoneSaving(false)
     if(!saved)return
-    closeZone()
+    setZoneActions(null)
     if(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches)return
     setLeavingZones(current=>[...current,zone])
     const timer=setTimeout(()=>{
@@ -468,7 +505,7 @@ function App(){
     <button type="button" aria-label="Закрыть" title="Закрыть" onClick={requestClose}>×</button>
     <button type="submit" aria-label="Сохранить" title="Сохранить">✓</button>
   </div>
-  <label className="editor-title"><span className="sr-only">Задача</span><textarea key={String(detailsOpen)} autoFocus required maxLength={200} placeholder="Задача" value={draft.title} onChange={e=>field('title',e.target.value)}/></label>
+  <label className="editor-title"><textarea aria-label="Задача" key={String(detailsOpen)} autoFocus required maxLength={200} placeholder="Задача" value={draft.title} onChange={e=>field('title',e.target.value)}/></label>
   {detailsOpen?<div className="editor-details"><label>Заметка<textarea value={draft.note} onChange={e=>field('note',e.target.value)}/></label><label>Метки через запятую<input value={draft.tags||''} onChange={e=>field('tags',e.target.value)}/></label>
   <label>Цвет стикера<select value={draft.paper??paperColors[Math.max(0,tasks.findIndex(task=>task.id===draft.id))%paperColors.length]} onChange={e=>field('paper',e.target.value)}>{paperColors.map(color=><option key={color}>{color}</option>)}</select></label>
   <label>Цвет пина<select value={draft.pinColor??defaultPinColor(draft.id)} onChange={e=>field('pinColor',e.target.value as PinColor)}>{pinColors.map(color=><option key={color}>{color}</option>)}</select></label>
@@ -528,7 +565,7 @@ function App(){
   </nav><output>{error}</output>
   {reminderError&&<div className="app-notice" role="status">Не удалось настроить напоминания. <button onClick={()=>void flushReminders()}>Повторить</button></div>}
   {backupStatus&&<div className="app-notice" role="status">{backupStatus} <button aria-label="Закрыть сообщение" onClick={()=>setBackupStatus('')}>×</button></div>}{!today&&tasks.some(overdue)&&<p className={boardView?'board-overdue':undefined}><button onClick={()=>{if(discardDraft()){closeMenu();preferences('Сегодня',filter)}}}>Пора заняться · {tasks.filter(overdue).length} →</button></p>}
-  {view==='Доска'?ready&&<StickyBoard key={cameraVersion} located={located} zones={zones} leavingZones={leavingZones} createZone={createZone} editZone={openZone} moveZone={moveZone} initialCamera={camera.current} remember={rememberCamera} scrollEnabled={!isEditing&&!zoneDraft&&!importing} notes={tasks} visible={visible} surface={surface}
+  {view==='Доска'?ready&&<StickyBoard key={cameraVersion} located={located} zones={zones} leavingZones={leavingZones} createZone={createZone} editZone={showZoneActions} moveZone={moveZone} resizeZone={resizeZone} initialCamera={camera.current} remember={rememberCamera} scrollEnabled={!isEditing&&!zoneDraft&&!importing} notes={tasks} visible={visible} surface={surface}
     customize={background=>preferences(view,filter,background)} add={(position,paper,avoidOverlap)=>add(0,position,paper,false,avoidOverlap)} edit={openStickerMenu} move={move} editingId={detailsOpen?undefined:draft?.id} renderEditor={renderEditor}/>:<div id="board">{(today?['Пора заняться','Сегодня до конца дня','Ближайшее']:stages).map((s,i)=>{
     const group=columns[i]
     return <section key={s} className={over===i?'over':''} onDragOver={e=>{if(!today){e.preventDefault();setOver(i)}}} onDrop={e=>{e.preventDefault();setOver(-1);if(today)return;const paper=e.dataTransfer.getData(paperDragType);if(paperColors.some(color=>color===paper)){add(i,undefined,paper);return}const id=e.dataTransfer.getData('text/plain');void save(current=>current.some(t=>t.id===id&&t.stage!==i)?current.map(t=>t.id===id?{...t,stage:i}:t):current)}}><h2>{s}<small>{group.length}</small></h2>{group.map(card)}{today&&!group.length&&<small>Задач нет</small>}{!today&&<button className="add" disabled={!ready} onClick={()=>add(i)}>+ Стикер</button>}</section>
@@ -545,6 +582,17 @@ function App(){
   </div>}{menu&&draft&&(!boardView||detailsOpen)&&<div ref={panel} className="sticker-panel" role="dialog" aria-label="Меню стикера"
     style={{left:panelLeft,top:panelTop,width:panelWidth,maxHeight:Math.max(100,window.innerHeight-panelTop-12)}}>
     {renderEditor()}</div>}
+    {zoneActions&&<div ref={zoneActionPanel} className="sticker-actions" role="group" aria-label="Действия с областью"
+      style={{left:zoneActions.left,top:zoneActions.top}}>
+      <button type="button" autoFocus aria-label="Изменить область" title="Изменить область"
+        onClick={()=>openZone(zoneActions.zone,zoneActions.anchor)}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6 4 4M4 20l4.5-1 11-11a2.8 2.8 0 0 0-4-4l-11 11L4 20Z"/></svg>
+      </button>
+      <button type="button" className="destroy-button" aria-label="Удалить область" title="Удалить область"
+        disabled={zoneSaving} onClick={()=>void deleteZone(zoneActions.zone)}>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 10v6m4-6v6"/></svg>
+      </button>
+    </div>}
     <dialog ref={zoneDialog} className="zone-dialog" aria-labelledby="zone-dialog-title"
       onCancel={event=>{event.preventDefault();if(!zoneSaving)closeZone()}}>
       {zoneDraft&&<form onSubmit={async event=>{
@@ -577,7 +625,6 @@ function App(){
         </select></label>
         <output>{error}</output>
         <div className="row">
-          {zones.some(zone=>zone.id===zoneDraft.id)&&<button type="button" onClick={()=>void deleteZone(zoneDraft)}>Удалить область</button>}
           <button type="button" onClick={closeZone}>Отмена</button>
           <button className="primary" type="submit">Сохранить область</button>
         </div>

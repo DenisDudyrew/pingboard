@@ -1,4 +1,4 @@
-import {zoneAt,zoneColors,zoneColorValues,zoneSize,type Zone} from './board-zones'
+import {zoneAt,zoneColors,zoneColorValues,zoneSize,resizeBounds,resizeEdges,type ResizeEdge,type Zone} from './board-zones'
 import {useEffect, useEffectEvent, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode} from 'react'
 
 export const paperColors = ['Лимон','Сирень','Мята','Персик','Голубой'] as const
@@ -29,15 +29,16 @@ export type Point = {x:number,y:number}
 type Camera = Point & {zoom:number}
 type PinchEvent = MouseEvent & {scale:number}
 type Note = {id:string,title:string,note:string,stage:number,paper?:string,pinColor?:PinColor,position?:Point}
-type Gesture = {pointer:number,id?:string,zone?:boolean,start:Point,origin:Point,moved:boolean}
+type Gesture = {pointer:number,id?:string,zone?:boolean,resize?:{zone:Zone,edge:ResizeEdge},start:Point,origin:Point,moved:boolean}
 
 export function notePosition(index:number):Point {
   return {x:28+(index%3)*196,y:34+Math.floor(index/3)*196}
 }
 
-export function StickyBoard<T extends Note>({notes, visible, surface, customize, add, edit, move, editingId, renderEditor, initialCamera, remember, scrollEnabled, located, zones, leavingZones, createZone, editZone, moveZone}:{
+export function StickyBoard<T extends Note>({notes, visible, surface, customize, add, edit, move, editingId, renderEditor, initialCamera, remember, scrollEnabled, located, zones, leavingZones, createZone, editZone, moveZone, resizeZone}:{
   initialCamera:Camera, remember:(state:Camera,gesture?:boolean)=>void, scrollEnabled:boolean, located:{id:string}|null,
-  zones:Zone[], leavingZones:Zone[], createZone:(position:Point)=>void, editZone:(zone:Zone)=>void, moveZone:(id:string,position:Point)=>Promise<boolean>,
+  zones:Zone[], leavingZones:Zone[], createZone:(position:Point)=>void, editZone:(zone:Zone,anchor:HTMLElement)=>void, moveZone:(id:string,position:Point)=>Promise<boolean>,
+  resizeZone:(id:string,bounds:ReturnType<typeof resizeBounds>)=>Promise<boolean>,
   notes:T[], visible:Set<string>, surface:string, customize:(surface:string)=>void,
   add:(position:Point,paper?:string,avoidOverlap?:boolean)=>void, edit:(note:T,anchor:HTMLElement)=>void, move:(id:string,position:Point)=>Promise<boolean>, editingId?:string, renderEditor:()=>ReactNode
 }) {
@@ -51,7 +52,7 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
   }
   const {zoom}=camera
   function changeZoom(value:number){remember(setCamera(currentCamera.current,value))}
-  const [preview,setPreview]=useState<{id:string,point:Point,zone?:boolean}|null>(null)
+  const [preview,setPreview]=useState<{id:string,point:Point,zone?:boolean,bounds?:ReturnType<typeof resizeBounds>}|null>(null)
   const [panning,setPanning]=useState(false)
   const viewport=useRef<HTMLDivElement>(null)
   const committing=useRef(false)
@@ -137,12 +138,12 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
     if(located)focusLocated(located.id)
   },[located])
 
-  function start(event:PointerEvent<HTMLElement>,origin:Point,id?:string,zone=false){
+  function start(event:PointerEvent<HTMLElement>,origin:Point,id?:string,zone=false,resize?:Gesture['resize']){
     if(id)event.stopPropagation()
     if(event.button!==0||gesture.current||(id&&committing.current))return
     event.currentTarget.setPointerCapture(event.pointerId)
     suppressClick.current=null
-    gesture.current={pointer:event.pointerId,id,zone,start:{x:event.clientX,y:event.clientY},origin,moved:false}
+    gesture.current={pointer:event.pointerId,id,zone,resize,start:{x:event.clientX,y:event.clientY},origin,moved:false}
   }
   function displacement(event:PointerEvent<HTMLElement>,drag:Gesture){
     return {x:event.clientX-drag.start.x,y:event.clientY-drag.start.y}
@@ -150,6 +151,10 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
   function position(drag:Gesture,delta:Point){
     const scale=drag.id?zoom:1
     return {x:Math.round(drag.origin.x+delta.x/scale),y:Math.round(drag.origin.y+delta.y/scale)}
+  }
+  function objectPreview(current:Gesture,id:string,delta:Point){
+    const bounds=current.resize&&resizeBounds(current.resize.zone,current.resize.edge,{x:delta.x/zoom,y:delta.y/zoom})
+    return {id,point:bounds??position(current,delta),zone:current.zone,bounds}
   }
   function drag(event:PointerEvent<HTMLElement>){
     const current=gesture.current
@@ -159,7 +164,7 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
     if(!current.moved&&Math.hypot(delta.x,delta.y)<5)return
     current.moved=true
     const point=position(current,delta)
-    if(current.id)setPreview({id:current.id,point,zone:current.zone})
+    if(current.id)setPreview(objectPreview(current,current.id,delta))
     else{setPanning(true);setCamera(point)}
   }
   function end(event:PointerEvent<HTMLElement>,cancel=false){
@@ -175,10 +180,11 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
     if(!current.id||!current.moved)return
     suppressClick.current=current.id
     if(cancel){setPreview(null);return}
-    const point=position(current,displacement(event,current))
-    setPreview({id:current.id,point,zone:current.zone})
+    const next=objectPreview(current,current.id,displacement(event,current))
+    setPreview(next)
     committing.current=true
-    void (current.zone?moveZone(current.id,point):move(current.id,point)).finally(()=>{
+    const saved=next.bounds?resizeZone(current.id,next.bounds):current.zone?moveZone(current.id,next.point):move(current.id,next.point)
+    void saved.finally(()=>{
       committing.current=false
       setPreview(null)
     })
@@ -214,11 +220,13 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
     document.addEventListener('keydown',shortcut)
     return ()=>document.removeEventListener('keydown',shortcut)
   },[])
-  const movingZone=preview?.zone?zones.find(zone=>zone.id===preview.id):undefined
+  const movingZone=preview?.zone&&!preview.bounds?zones.find(zone=>zone.id===preview.id):undefined
   const arrows:Record<string,Point>={ArrowUp:{x:0,y:-20},ArrowDown:{x:0,y:20},ArrowLeft:{x:-20,y:0},ArrowRight:{x:20,y:0}}
   function zoneStyle(zone:Zone){
-    const point=movingZone?.id===zone.id&&preview?preview.point:zone
-    return {left:point.x,top:point.y,width:zone.width,height:zone.height,
+    const active=preview?.zone&&preview.id===zone.id?preview:undefined
+    const point=active?.point??zone
+    const size=active?.bounds??zone
+    return {left:point.x,top:point.y,width:size.width,height:size.height,
       '--zone-color':zoneColorValues[zoneColors.indexOf(zone.color)],'--zone-ui-scale':1/zoom} as CSSProperties
   }
   return <div className="studio">
@@ -245,8 +253,8 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
       <div className="pinboard-plane" style={{transform:`translate(${camera.x}px,${camera.y}px) scale(${zoom})`}}>
         {zones.map(zone=><div key={zone.id} className="board-zone" data-zone-id={zone.id} style={zoneStyle(zone)}
           onPointerDown={event=>start(event,zone,zone.id,true)}
-          onDoubleClick={()=>{if(suppressClick.current!==zone.id)editZone(zone)}}
-          onContextMenu={event=>{event.preventDefault();editZone(zone)}}/>)}
+          onDoubleClick={event=>{if(suppressClick.current!==zone.id)editZone(zone,event.currentTarget)}}
+          onContextMenu={event=>{event.preventDefault();editZone(zone,event.currentTarget)}}/>)}
         {leavingZones.map(zone=><div key={zone.id} className="board-zone zone-leaving" style={zoneStyle(zone)} aria-hidden="true"/>)}
         {leavingZones.map(zone=><div key={zone.id} className="board-zone-header zone-leaving" style={zoneStyle(zone)} aria-hidden="true">
           <div className="board-zone-title"><span>{zone.title}</span></div>
@@ -255,7 +263,9 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
         {zones.map(zone=><div key={zone.id} className="board-zone-header" style={zoneStyle(zone)}>
           <button type="button" className="board-zone-title" title={zone.title} aria-label={'Настроить область: '+zone.title}
             onPointerDown={event=>start(event,zone,zone.id,true)}
-            onClick={event=>{if(event.detail===0||suppressClick.current!==zone.id)editZone(zone)}}
+            onClick={event=>{if(event.detail===0)editZone(zone,event.currentTarget)}}
+            onDoubleClick={event=>{if(suppressClick.current!==zone.id)editZone(zone,event.currentTarget)}}
+            onContextMenu={event=>{event.preventDefault();editZone(zone,event.currentTarget)}}
             onKeyDown={event=>{
               const offset=arrows[event.key]
               if(!offset||event.metaKey||event.ctrlKey||event.altKey)return
@@ -263,6 +273,8 @@ export function StickyBoard<T extends Note>({notes, visible, surface, customize,
               void moveZone(zone.id,{x:zone.x+offset.x,y:zone.y+offset.y})
             }}><span>{zone.title}</span><span aria-hidden="true">⋯</span></button>
           {zone.description&&<p>{zone.description}</p>}
+          {resizeEdges.map(edge=><span key={edge} className="zone-resize" data-edge={edge} aria-hidden="true"
+            onPointerDown={event=>start(event,zone,zone.id,true,{zone,edge})}/>)}
         </div>)}
         {notes.map((note,index)=>{
           if(!visible.has(note.id))return null
